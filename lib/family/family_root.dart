@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../common/auth/session_controller.dart';
-import '../common/notifications/notification_inbox.dart';
 import '../common/notifications/push_coordinator.dart';
 import '../common/theme/app_theme.dart';
 import '../common/widgets/header_app_bar.dart';
 import 'feedback/feedback_screen.dart';
+import 'notifications/family_inbox_screen.dart';
 import 'portal/portal_screen.dart';
 import 'profile/family_profile_screen.dart';
 import 'right_change_requests/right_change_requests_screen.dart';
@@ -30,7 +30,7 @@ class _FamilyRootState extends State<FamilyRoot> {
 
   List<(String, String, IconData, Widget Function())> get _tabs => [
     ('Người cao tuổi của tôi', 'Người thân', LucideIcons.heartHandshake, () => PortalScreen(api: widget.session.api)),
-    ('Thông báo', 'Thông báo', LucideIcons.bell, () => NotificationInbox(api: widget.session.api, push: widget.push)),
+    ('Thông báo', 'Thông báo', LucideIcons.bell, () => FamilyInboxScreen(api: widget.session.api, push: widget.push)),
     (
       'Yêu cầu chờ xác nhận',
       'Yêu cầu',
