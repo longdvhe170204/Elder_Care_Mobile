@@ -102,9 +102,9 @@ void main() {
     expect(find.text('Quên mật khẩu?'), findsOneWidget);
   });
 
-  testWidgets('chanMan_coPhienBan_vaCauMayDungChung', (tester) async {
+  // Câu máy dùng chung (FR-014a) anh bỏ khỏi màn ngày 2026-11-21 cho khớp mẫu Figma 88:254.
+  testWidgets('chanMan_coPhienBan', (tester) async {
     await pump(tester);
     expect(find.text('Phiên bản 1.0.0'), findsOneWidget);
-    expect(find.textContaining('Máy dùng chung'), findsOneWidget);
   });
 }

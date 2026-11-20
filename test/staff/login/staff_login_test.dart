@@ -41,7 +41,7 @@ void main() {
     backend.on('POST', '/auth/login', 200, {'token': 'staff-1', 'user': user('STAFF')});
     await pumpApp(tester, backend, store);
 
-    expect(find.textContaining('kết thúc phiên của người trước'), findsOneWidget);
+    // Câu máy dùng chung bỏ khỏi màn đăng nhập theo mẫu Figma 88:254 (anh chốt 2026-11-21); backend vẫn kết thúc phiên trước.
     await tester.enterText(find.byKey(LoginScreen.usernameKey), ' dieu-duong-1 ');
     await tester.enterText(find.byKey(LoginScreen.passwordKey), 'matkhau123');
     await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
