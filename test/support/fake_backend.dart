@@ -68,12 +68,14 @@ Map<String, dynamic> residentUser({bool mustChangePassword = false}) => {
   'mustChangePassword': mustChangePassword,
 };
 
-/// Người dùng của `/me`, `/auth/login` theo loại tài khoản (`STAFF`, `FAMILY_MEMBER`, `RESIDENT`).
-Map<String, dynamic> user(String type, {bool mustChangePassword = false}) => {
+/// Người dùng của `/me`, `/auth/login` theo loại tài khoản (`STAFF`, `FAMILY_MEMBER`, `RESIDENT`). Nhân viên mặc định có
+/// vai trò Điều dưỡng (`AC-04`) để vào được phần nhân viên (điều hướng theo vai trò, spec 2026-11-20); test cần vai trò
+/// khác truyền [roles].
+Map<String, dynamic> user(String type, {bool mustChangePassword = false, List<String>? roles}) => {
   'accountId': 7,
   'type': type,
   'fullName': '[Họ tên 1]',
-  'roles': <String>[],
+  'roles': roles ?? (type == 'STAFF' ? ['AC-04'] : <String>[]),
   'mustChangePassword': mustChangePassword,
 };
 

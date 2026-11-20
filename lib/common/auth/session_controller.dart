@@ -17,6 +17,7 @@ class UserInfo {
     this.fullName,
     required this.mustChangePassword,
     this.sessionIdleTimeoutSeconds,
+    this.roles = const {},
   });
 
   factory UserInfo.fromJson(Map<String, dynamic> json) => UserInfo(
@@ -29,6 +30,7 @@ class UserInfo {
     fullName: json['fullName'] as String?,
     mustChangePassword: json['mustChangePassword'] == true,
     sessionIdleTimeoutSeconds: (json['sessionIdleTimeoutSeconds'] as num?)?.toInt(),
+    roles: {...?(json['roles'] as List?)?.whereType<String>()},
   );
 
   final int accountId;
@@ -38,6 +40,10 @@ class UserInfo {
 
   /// Thời gian không thao tác của kênh phiên (CFG-M15-10); chỉ `GET /me` trả, `null` khi kênh không tự đăng xuất.
   final int? sessionIdleTimeoutSeconds;
+
+  /// Mã actor của các vai trò (`AC-04`…; api-002 `UserInfo.roles`); app nhân viên chọn điều hướng theo đây (spec
+  /// 2026-11-20 điều hướng theo vai trò).
+  final Set<String> roles;
 }
 
 enum SessionStatus {
@@ -68,6 +74,7 @@ class SessionController extends ChangeNotifier {
   static const deviceIdKey = 'device.id';
   static const userTypeKey = 'session.userType';
   static const accountIdKey = 'session.accountId';
+  static const rolesKey = 'session.roles';
 
   /// Tên đăng nhập của nhân viên, người thân: màn đăng nhập lại khi hết phiên chỉ cho đúng tài khoản (002 T047c).
   static const usernameKey = 'session.username';
@@ -117,6 +124,7 @@ class SessionController extends ChangeNotifier {
         accountId: int.tryParse(await store.read(accountIdKey) ?? '') ?? 0,
         type: AccountType.values.firstWhere((t) => t.name == type, orElse: () => AccountType.resident),
         mustChangePassword: false,
+        roles: {...?(await store.read(rolesKey))?.split(',').where((r) => r.isNotEmpty)},
       );
     }
     if (user!.mustChangePassword) {
@@ -244,6 +252,7 @@ class SessionController extends ChangeNotifier {
   Future<void> _remember(UserInfo info) async {
     await store.write(userTypeKey, info.type.name);
     await store.write(accountIdKey, info.accountId.toString());
+    await store.write(rolesKey, info.roles.join(','));
   }
 
   Future<String> _deviceId() async {
@@ -260,6 +269,7 @@ class SessionController extends ChangeNotifier {
     username = null;
     await store.delete(tokenKey);
     await store.delete(usernameKey);
+    await store.delete(rolesKey);
   }
 
   void _set(SessionStatus next) {

@@ -35,7 +35,7 @@ void main() {
     await pumpSignedIn(tester, backend, store, 'STAFF');
 
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.textContaining('Hôm nay,'), findsNothing);
+    expect(find.text('Hôm nay'), findsNothing);
   });
 
   testWidgets('T006_taiKhoanNguoiThan_vaoPhanNguoiThan', (tester) async {
@@ -47,7 +47,7 @@ void main() {
   testWidgets('T006_taiKhoanNguoiCaoTuoi_vaoHomNay', (tester) async {
     await pumpSignedIn(tester, backend, store, 'RESIDENT');
 
-    expect(find.textContaining('Hôm nay,'), findsOneWidget);
+    expect(find.text('Hôm nay'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
 

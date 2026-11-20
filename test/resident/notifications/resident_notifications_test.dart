@@ -48,6 +48,8 @@ Future<void> pumpToday(WidgetTester tester, ApiClient api, {double textScale = 1
 }
 
 Future<void> openList(WidgetTester tester) async {
+  await tester.ensureVisible(find.text('Thông báo'));
+  await tester.pumpAndSettle();
   await tester.tap(find.text('Thông báo'));
   await tester.pumpAndSettle();
 }
@@ -95,7 +97,7 @@ void main() {
 
     await tester.tap(find.text('Quay lại'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Hôm nay,'), findsOneWidget);
+    expect(find.text('Hôm nay'), findsOneWidget);
   });
 
   testWidgets('T042_backButton_fitsAtDoubleTextSize', (tester) async {

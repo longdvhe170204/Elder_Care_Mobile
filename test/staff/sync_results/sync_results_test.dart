@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app.dart';
 import 'package:mobile/common/auth/secure_store.dart';
@@ -22,6 +23,8 @@ Future<List<String>> pumpStaff(WidgetTester tester, FakeBackend backend, MemoryS
     ],
   );
   await tester.pumpWidget(ElderCareApp(session: s, queue: queue));
+  await settle(tester);
+  await tester.tap(find.widgetWithText(NavigationDestination, 'Thêm'));
   await settle(tester);
   await tester.tap(find.text('Đồng bộ'));
   await settle(tester);
@@ -87,6 +90,8 @@ void main() {
       ),
     );
     await tester.pumpWidget(ElderCareApp(session: s, queue: queue));
+    await settle(tester);
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Thêm'));
     await settle(tester);
     await tester.tap(find.text('Đồng bộ'));
     await settle(tester);

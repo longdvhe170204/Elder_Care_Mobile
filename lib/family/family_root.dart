@@ -3,18 +3,15 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../common/auth/session_controller.dart';
 import '../common/notifications/push_coordinator.dart';
-import '../common/theme/app_theme.dart';
 import '../common/widgets/header_app_bar.dart';
-import 'feedback/feedback_screen.dart';
 import 'notifications/family_inbox_screen.dart';
-import 'portal/portal_screen.dart';
-import 'profile/family_profile_screen.dart';
-import 'right_change_requests/right_change_requests_screen.dart';
+import 'portal/family_selection.dart';
+import 'portal/family_tabs.dart';
 
-/// Gốc phần người thân (000 T007; 002 T047; Q-346, Q-305: cùng chức năng với cổng người thân trên web). Màn của từng
-/// feature đặt ở `family/<feature>/` (mobile/README.md mục 2) và thêm vào [_tabs]; thanh điều hướng dưới (DESIGN.md 15.4)
-/// có từ màn thứ hai: Thông báo (009 T031), Yêu cầu chờ xác nhận (012 T017), Người cao tuổi (cổng, 012 T028; đăng ký thăm
-/// mở từ đây), Phản hồi (012 T030), Hồ sơ (001 T023).
+/// Gốc phần người thân (000 T007; 002 T047; Q-346, Q-305; spec docs/superpowers/specs/2026-11-20-role-based-navigation-
+/// design.md mục 6): thanh dưới cố định 5 tab Hôm nay · Lịch thăm · Chi phí · Thông báo · Thêm cho mọi người thân, kể cả
+/// khi thiếu quyền (tab thiếu quyền nói rõ lý do). Người thân của nhiều người cao tuổi chọn người ở đầu màn; mọi tab tính
+/// theo người đang chọn.
 class FamilyRoot extends StatefulWidget {
   const FamilyRoot({super.key, required this.session, this.push});
 
@@ -27,42 +24,97 @@ class FamilyRoot extends StatefulWidget {
 
 class _FamilyRootState extends State<FamilyRoot> {
   int _index = 0;
+  late final FamilySelection _selection = FamilySelection(widget.session.api)..addListener(_changed);
 
-  List<(String, String, IconData, Widget Function())> get _tabs => [
-    ('Người cao tuổi của tôi', 'Người thân', LucideIcons.heartHandshake, () => PortalScreen(api: widget.session.api)),
-    ('Thông báo', 'Thông báo', LucideIcons.bell, () => FamilyInboxScreen(api: widget.session.api, push: widget.push)),
-    (
-      'Yêu cầu chờ xác nhận',
-      'Yêu cầu',
-      LucideIcons.clipboardCheck,
-      () => RightChangeRequestsScreen(api: widget.session.api),
-    ),
-    ('Phản hồi', 'Phản hồi', LucideIcons.messageSquare, () => FeedbackScreen(api: widget.session.api)),
-    ('Hồ sơ', 'Hồ sơ', LucideIcons.userRound, () => FamilyProfileScreen(api: widget.session.api)),
+  static const _inboxIndex = 3;
+
+  @override
+  void initState() {
+    super.initState();
+    _selection.load();
+  }
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  static const _tabs = [
+    ('Hôm nay', LucideIcons.heartHandshake),
+    ('Lịch thăm', LucideIcons.calendarDays),
+    ('Chi phí', LucideIcons.wallet),
+    ('Thông báo', LucideIcons.bell),
+    ('Thêm', LucideIcons.ellipsis),
   ];
+
+  Widget _body(BuildContext context) {
+    if (_index == _inboxIndex) return FamilyInboxScreen(api: widget.session.api, push: widget.push);
+    final text = Theme.of(context).textTheme;
+    final residents = _selection.residents;
+    if (_selection.error != null) {
+      return Padding(padding: const EdgeInsets.all(16), child: Text(_selection.error!, style: text.bodyMedium));
+    }
+    if (residents == null) return const Center(child: CircularProgressIndicator());
+    final current = _selection.current;
+    if (current == null) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('Chưa có người cao tuổi nào có quan hệ Hiệu lực với tài khoản này.', style: text.bodyMedium),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (residents.length > 1)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                for (final r in residents)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(r.fullName),
+                      selected: r.id == current.id,
+                      onSelected: (_) => _selection.select(r.id),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: KeyedSubtree(key: ValueKey((_index, current.id)), child: _tab(current)),
+        ),
+      ],
+    );
+  }
+
+  Widget _tab(FamilyResident resident) {
+    final api = widget.session.api;
+    return switch (_index) {
+      0 => FamilyTodayTab(api: api, resident: resident),
+      1 => FamilyVisitsTab(api: api, resident: resident),
+      2 => FamilyCostsTab(api: api, resident: resident),
+      _ => FamilyMoreTab(api: api, resident: resident, onSignOut: () => widget.session.signOut()),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
-    final tabs = _tabs;
     return Scaffold(
-      appBar: headerAppBar(
-        context,
-        title: tabs[_index].$1,
-        actions: [
-          TextButton.icon(
-            style: TextButton.styleFrom(foregroundColor: Theme.of(context).extension<Tones>()!.headerInkStrong),
-            onPressed: () => widget.session.signOut(),
-            icon: const Icon(LucideIcons.logOut),
-            label: const Text('Đăng xuất'),
-          ),
-        ],
-      ),
-      body: KeyedSubtree(key: ValueKey(_index), child: tabs[_index].$4()),
+      appBar: headerAppBar(context, title: _tabs[_index].$1),
+      body: _body(context),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
-          for (final (_, label, icon, _) in tabs) NavigationDestination(icon: Icon(icon), label: label),
+          for (final (label, icon) in _tabs) NavigationDestination(icon: Icon(icon), label: label),
         ],
       ),
     );

@@ -16,7 +16,8 @@ Future<void> pumpStaff(WidgetTester tester, FakeBackend backend) async {
 }
 
 void main() {
-  testWidgets('FR_054_myShiftsRequiresViewPermissionAndIsReachableThroughMore', (tester) async {
+  // Spec 2026-11-20 điều hướng theo vai trò: Ca của tôi là tab đầu, mở mặc định (Figma 03 · App nhân viên).
+  testWidgets('FR_054_caCuaToi_tabDau_moMacDinh', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
         {'function': 'SHIFT_SCHEDULE', 'operation': 'VIEW'},
@@ -25,19 +26,29 @@ void main() {
       ..on('GET', '/staff', 200, []);
 
     await pumpStaff(tester, backend);
-    expect(find.byType(NavigationDestination), findsNWidgets(5));
-    expect(find.text('Thêm'), findsOneWidget);
-    expect(backend.calls('GET', '/me/shifts'), isEmpty);
-    await tester.tap(find.text('Thêm'));
-    await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsOneWidget);
-    await tester.tap(find.text('Ca của tôi'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Bạn không có ca nào trong tháng này.'), findsOneWidget);
-    expect(backend.calls('GET', '/me/shifts'), hasLength(1));
+    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(bar.selectedIndex, 0);
+    expect((bar.destinations.first as NavigationDestination).label, 'Ca của tôi');
     expect(backend.calls('GET', '/me/permissions').single.headers['Authorization'], 'Bearer test-session');
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 4);
+    expect(tester.takeException(), isNull);
+  });
+
+  // Lịch ca mở từ dòng "Lịch ca và đơn" của Ca của tôi; cùng màn có tab Đổi ca, nghỉ khi có quyền (015 US3, US4).
+  testWidgets('FR_054_lichCaVaDon_moLichCa_coDoiCaNghi', (tester) async {
+    final backend = FakeBackend()
+      ..on('GET', '/me/permissions', 200, [
+        {'function': 'SHIFT_SCHEDULE', 'operation': 'VIEW'},
+        {'function': 'SHIFT_SWAP_REQUEST', 'operation': 'VIEW'},
+      ])
+      ..on('GET', '/me/shifts', 200, [])
+      ..on('GET', '/staff', 200, []);
+
+    await pumpStaff(tester, backend);
+    await tester.scrollUntilVisible(find.text('Lịch ca và đơn'), 200);
+    await tester.tap(find.text('Lịch ca và đơn'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bạn không có ca nào trong tháng này.'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Đổi ca, nghỉ'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -47,17 +58,11 @@ void main() {
       {'function': 'SHIFT_SCHEDULE', 'operation': 'CREATE'},
     ],
   ]) {
-    testWidgets('FR_054_doesNotExposeMyShiftsWithoutView_$grants', (tester) async {
+    testWidgets('FR_054_khongQuyenXemLich_khongCoLichCaVaDon_$grants', (tester) async {
       final backend = FakeBackend()..on('GET', '/me/permissions', 200, grants);
       await pumpStaff(tester, backend);
-      expect(find.text('Ca của tôi'), findsNothing);
-      expect(find.text('Thêm'), findsOneWidget);
-      await tester.tap(find.text('Thêm'));
-      await tester.pumpAndSettle();
-      expect(find.text('Phê duyệt'), findsOneWidget);
-      expect(find.text('Ca của tôi'), findsNothing);
-      expect(find.byType(NavigationDestination), findsNWidgets(5));
-      expect(backend.calls('GET', '/me/shifts'), isEmpty);
+      expect(find.text('Lịch ca và đơn'), findsNothing);
+      expect(find.text('Báo sự cố'), findsOneWidget);
     });
   }
 
@@ -76,12 +81,8 @@ void main() {
       ..on('GET', '/staff', 200, []);
 
     await pumpStaff(tester, backend);
-    await tester.tap(find.text('Thêm'));
-    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Ca của tôi'));
     await tester.pumpAndSettle();
-    expect(find.text('Bạn không có ca nào trong tháng này.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

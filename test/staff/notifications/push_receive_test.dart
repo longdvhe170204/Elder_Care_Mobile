@@ -56,13 +56,20 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> toSyncTab(WidgetTester tester) async {
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Đồng bộ')));
+  Future<void> toOtherTab(WidgetTester tester) async {
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Tra cứu')));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('T022_notificationsTab_firstAndOpenedByDefault', (tester) async {
+  // Spec 2026-11-20: tab đầu là Ca của tôi (Figma); bấm tab Thông báo mở hộp.
+  Future<void> toInbox(WidgetTester tester) async {
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Thông báo')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('T022_notificationsTab_opensInbox', (tester) async {
     await pumpRoot(tester);
+    await toInbox(tester);
 
     expect(find.descendant(of: find.byType(AppBar), matching: find.text('Thông báo')), findsOneWidget);
     expect(find.text('Yêu cầu YC-2026-000050'), findsOneWidget);
@@ -77,7 +84,7 @@ void main() {
 
   testWidgets('FR_016_urgentOnOtherTab_showsBand_openGoesToInbox', (tester) async {
     await pumpRoot(tester);
-    await toSyncTab(tester);
+    await toOtherTab(tester);
 
     await arrive(tester, 'URGENT');
     expect(find.text('Có thông báo khẩn cấp mới'), findsOneWidget);
@@ -90,7 +97,7 @@ void main() {
 
   testWidgets('FR_016_lowLevelOnOtherTab_noBand', (tester) async {
     await pumpRoot(tester);
-    await toSyncTab(tester);
+    await toOtherTab(tester);
 
     await arrive(tester, 'LOW');
 
@@ -99,6 +106,7 @@ void main() {
 
   testWidgets('FR_016_urgentOnInboxTab_reloadsWithoutBand', (tester) async {
     await pumpRoot(tester);
+    await toInbox(tester);
     backend.on(
       'GET',
       '/me/notifications',
@@ -115,7 +123,7 @@ void main() {
   testWidgets('T022_tappedPushOnOtherTab_opensThatNotification', (tester) async {
     backend.on('GET', '/me/notifications/1', 200, notification());
     await pumpRoot(tester);
-    await toSyncTab(tester);
+    await toOtherTab(tester);
 
     await tester.runAsync(() async {
       fake.opened.add(1);

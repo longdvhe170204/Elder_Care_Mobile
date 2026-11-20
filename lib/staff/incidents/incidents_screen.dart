@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
+import 'record_incident_screen.dart';
 
 const _levelNames = {'CRITICAL': 'Khẩn cấp', 'MEDIUM': 'Trung bình', 'LOW': 'Nhẹ'};
 const _statusNames = {
@@ -101,6 +102,22 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Text('Sự cố đang xử lý', style: text.titleMedium),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton(
+              onPressed: () async {
+                final saved = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => RecordIncidentScreen(api: widget.api)),
+                );
+                if (saved == true && mounted) {
+                  setState(() => _notice = 'Đã ghi nhận sự cố.');
+                  await _load();
+                }
+              },
+              child: const Text('Báo sự cố'),
+            ),
+          ),
           if (_notice != null)
             Semantics(
               liveRegion: true,
