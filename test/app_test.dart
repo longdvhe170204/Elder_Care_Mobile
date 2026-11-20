@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app.dart';
+import 'package:mobile/common/auth/login_screen.dart';
 import 'package:mobile/common/auth/secure_store.dart';
 import 'package:mobile/common/auth/session_controller.dart';
 import 'package:mobile/resident/sos/sos_button.dart';
@@ -57,9 +58,9 @@ void main() {
     await tester.pumpWidget(ElderCareApp(session: s, queue: memoryQueue(s), scannerBuilder: fakeScanner));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(TextField, 'Tên đăng nhập'), findsOneWidget);
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Đăng nhập'), findsOneWidget);
-    expect(find.text('Người cao tuổi: quét mã QR'), findsOneWidget);
+    expect(find.text('Quét mã QR cho người cao tuổi'), findsOneWidget);
     expect(find.text('Tôi là'), findsNothing);
   });
 
@@ -71,6 +72,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Đặt mã QR nhân viên đưa vào trong khung.'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'Tên đăng nhập'), findsNothing);
+    expect(find.byKey(LoginScreen.usernameKey), findsNothing);
   });
 }

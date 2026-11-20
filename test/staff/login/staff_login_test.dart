@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app.dart';
+import 'package:mobile/common/auth/login_screen.dart';
 import 'package:mobile/common/auth/secure_store.dart';
 import 'package:mobile/common/auth/session_controller.dart';
 
@@ -21,8 +22,8 @@ Future<SessionController> pumpApp(WidgetTester tester, FakeBackend backend, Memo
 }
 
 Future<void> login(WidgetTester tester, String username, String password) async {
-  await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), username);
-  await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), password);
+  await tester.enterText(find.byKey(LoginScreen.usernameKey), username);
+  await tester.enterText(find.byKey(LoginScreen.passwordKey), password);
   await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
   await tester.pumpAndSettle();
 }
@@ -41,8 +42,8 @@ void main() {
     await pumpApp(tester, backend, store);
 
     expect(find.textContaining('kết thúc phiên của người trước'), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), ' dieu-duong-1 ');
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), 'matkhau123');
+    await tester.enterText(find.byKey(LoginScreen.usernameKey), ' dieu-duong-1 ');
+    await tester.enterText(find.byKey(LoginScreen.passwordKey), 'matkhau123');
     await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
     await tester.pumpAndSettle();
 

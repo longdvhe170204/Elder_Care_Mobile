@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app.dart';
+import 'package:mobile/common/auth/login_screen.dart';
 import 'package:mobile/common/auth/secure_store.dart';
 import 'package:mobile/common/auth/session_controller.dart';
 
@@ -33,8 +34,8 @@ void main() {
     await tester.pumpWidget(ElderCareApp(session: s, queue: memoryQueue(s)));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), 'nguoi-than-1');
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), 'tam12345');
+    await tester.enterText(find.byKey(LoginScreen.usernameKey), 'nguoi-than-1');
+    await tester.enterText(find.byKey(LoginScreen.passwordKey), 'tam12345');
     await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
     await tester.pumpAndSettle();
 
@@ -66,8 +67,8 @@ void main() {
     await s.start();
     await tester.pumpWidget(ElderCareApp(session: s, queue: memoryQueue(s)));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), 'nguoi-than-1');
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), 'tam12345');
+    await tester.enterText(find.byKey(LoginScreen.usernameKey), 'nguoi-than-1');
+    await tester.enterText(find.byKey(LoginScreen.passwordKey), 'tam12345');
     await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
     await tester.pumpAndSettle();
 

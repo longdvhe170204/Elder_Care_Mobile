@@ -58,14 +58,14 @@ void main() {
 
   testWidgets('Q_06_chuaCauHinh_anQuenMatKhau', (tester) async {
     await open(tester, backend(false, []));
-    expect(find.text('Quên mật khẩu'), findsNothing);
+    expect(find.text('Quên mật khẩu?'), findsNothing);
   });
 
   testWidgets('FR_052a_xinMa_datMatKhauMoi_quayVeDangNhap', (tester) async {
     final sent = <http.Request>[];
     await open(tester, backend(true, sent));
 
-    await tester.tap(find.text('Quên mật khẩu'));
+    await tester.tap(find.text('Quên mật khẩu?'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), ' nt-a ');
     await tester.tap(find.text('Gửi mã'));
@@ -84,7 +84,7 @@ void main() {
   testWidgets('FR_052a_maSai_hienCauMayChu_giuManNhapMa', (tester) async {
     await open(tester, backend(true, [], confirmStatus: 422));
 
-    await tester.tap(find.text('Quên mật khẩu'));
+    await tester.tap(find.text('Quên mật khẩu?'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), 'nt-a');
     await tester.tap(find.text('Gửi mã'));

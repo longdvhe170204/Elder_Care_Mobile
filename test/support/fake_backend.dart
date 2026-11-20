@@ -94,7 +94,7 @@ OfflineQueue memoryQueue(SessionController s) {
 
 /// Máy chưa gắn tài khoản người cao tuổi mở màn đăng nhập chung: bấm nút người cao tuổi để tới màn quét mã.
 Future<void> openResidentLogin(WidgetTester tester) async {
-  final choice = find.text('Người cao tuổi: quét mã QR');
+  final choice = find.text('Quét mã QR cho người cao tuổi');
   if (choice.evaluate().isEmpty) return;
   await tester.tap(choice);
   await tester.pumpAndSettle();
