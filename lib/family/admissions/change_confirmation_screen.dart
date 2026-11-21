@@ -185,7 +185,7 @@ class _ChangeConfirmationScreenState extends State<ChangeConfirmationScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Xác nhận thay đổi lưu trú')),
+      appBar: AppBar(title: const Text('Xác nhận điều chỉnh hợp đồng')),
       body: PageBody(
         child: SingleChildScrollView(
           child: Column(
@@ -195,7 +195,7 @@ class _ChangeConfirmationScreenState extends State<ChangeConfirmationScreen> {
               if (_loadError != null) Semantics(liveRegion: true, child: Text(_loadError!)),
               if (_item != null) ...[
                 const Text(
-                  'Viện đề nghị thay đổi lưu trú của người thân. Bạn là người đại diện nên xác nhận có đồng ý hay không.',
+                  'Viện đề nghị điều chỉnh hợp đồng của người thân. Bạn là người đại diện nên xác nhận có đồng ý hay không.',
                 ),
                 const SizedBox(height: 12),
                 ..._content(text),

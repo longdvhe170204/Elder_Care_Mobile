@@ -92,7 +92,7 @@ void main() {
       'id': 1,
       'level': 'LOW',
       'eventType': 'RESIDENCY_CHANGE_CONFIRMATION_REQUESTED',
-      'title': 'Đề nghị xác nhận thay đổi lưu trú',
+      'title': 'Đề nghị xác nhận điều chỉnh hợp đồng',
       'content': const <Map<String, dynamic>>[],
       'hiddenParts': const <String>[],
       'identityOnly': false,
@@ -100,7 +100,8 @@ void main() {
       'sentAt': '2026-11-20T02:00:00Z',
       'viewedAt': null,
       'acknowledgedAt': null,
-      'sourceRecord': {'type': 'M02.CHANGE_CONFIRMATION', 'id': '7', 'canOpen': true},
+      // Backend 009 hiện luôn trả canOpen false; nút vẫn phải hiện
+      'sourceRecord': {'type': 'M02.CHANGE_CONFIRMATION', 'id': '7', 'canOpen': false},
     };
     final b = backend()
       ..on('GET', '/residents', 403, {'errorCode': 'PERMISSION_DENIED'})
@@ -118,11 +119,61 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Đề nghị xác nhận thay đổi lưu trú').first);
+    await tester.tap(find.text('Đề nghị xác nhận điều chỉnh hợp đồng').first);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Xem đề nghị'));
-    await tester.tap(find.text('Xem đề nghị'));
+    await tester.ensureVisible(find.text('Xem chi tiết thay đổi'));
+    await tester.tap(find.text('Xem chi tiết thay đổi'));
     await tester.pumpAndSettle();
     expect(find.text('Mức chăm sóc: Cơ bản → Đặc biệt'), findsOneWidget);
   });
+
+  // 004 M3: thông báo gửi duyệt, kết quả, phụ lục đã áp dụng (nguồn M02.RESIDENCY_CHANGE) mở danh sách đề nghị đã gửi
+  for (final type in ['RESIDENCY_CHANGE_SUBMITTED', 'RESIDENCY_CHANGE_OUTCOME', 'ADDENDUM_APPLIED']) {
+    testWidgets('M3_${type}_moDanhSachDeNghiDaGui', (tester) async {
+      final n = {
+        'id': 2,
+        'level': 'LOW',
+        'eventType': type,
+        'title': 'Điều chỉnh hợp đồng $type',
+        'content': const <Map<String, dynamic>>[],
+        'hiddenParts': const <String>[],
+        'identityOnly': false,
+        'status': 'SENT',
+        'sentAt': '2026-11-20T02:00:00Z',
+        'viewedAt': null,
+        'acknowledgedAt': null,
+        'sourceRecord': {'type': 'M02.RESIDENCY_CHANGE', 'id': '12', 'canOpen': false},
+      };
+      final b = backend()
+        ..on('GET', '/residents', 200, {
+          'items': [
+            {
+              'id': 5,
+              'personalInfo': {'fullName': 'Nguyễn Thị Lan'},
+            },
+          ],
+        })
+        ..on('GET', '/family-portal/residents/5/contract', 200, {'contracts': []})
+        ..on('GET', '/me/notifications', 200, {
+          'items': [n],
+          'unreadCount': 1,
+          'unacknowledgedUrgentCount': 0,
+          'nextCursor': null,
+        })
+        ..on('GET', '/me/notifications/2', 200, n);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(body: FamilyInboxScreen(api: b.client())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Điều chỉnh hợp đồng $type').first);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Xem đề nghị đã gửi'));
+      await tester.tap(find.text('Xem đề nghị đã gửi'));
+      await tester.pumpAndSettle();
+      expect(find.text('Bạn chưa gửi đề nghị điều chỉnh hợp đồng nào.'), findsOneWidget);
+    });
+  }
 }
