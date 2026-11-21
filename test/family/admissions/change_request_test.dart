@@ -136,7 +136,7 @@ void main() {
       'reason': 'Sau đợt đánh giá mới',
     });
     expect(call.headers['Idempotency-Key'], matches(RegExp(r'^[0-9a-f-]{36}$')));
-    expect(find.text('Đã gửi yêu cầu, Hành chính sẽ hoàn thiện và gửi Quản lý viện duyệt.'), findsOneWidget);
+    expect(find.textContaining('Đã gửi yêu cầu, Hành chính sẽ hoàn thiện và gửi Quản lý viện duyệt.'), findsOneWidget);
   });
 
   testWidgets('FR_037_khongCoHopDongHieuLuc_baoLienHeHanhChinh', (tester) async {

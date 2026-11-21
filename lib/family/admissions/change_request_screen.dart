@@ -175,7 +175,13 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
         },
         headers: {'Idempotency-Key': _key},
       );
-      if (mounted) setState(() => _done = 'Đã gửi yêu cầu, Hành chính sẽ hoàn thiện và gửi Quản lý viện duyệt.');
+      if (mounted) {
+        setState(
+          () => _done =
+              'Đã gửi yêu cầu, Hành chính sẽ hoàn thiện và gửi Quản lý viện duyệt. '
+              'Theo dõi ở mục "Đề nghị điều chỉnh đã gửi".',
+        );
+      }
     } on Exception catch (e) {
       if (mounted) setState(() => _error = backendMessage(e));
     } finally {
@@ -222,7 +228,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Yêu cầu thay đổi lưu trú', style: text.titleMedium),
+        Text('Đề nghị điều chỉnh hợp đồng', style: text.titleMedium),
         const SizedBox(height: 4),
         Text('Yêu cầu được lập ở Nháp, Hành chính hoàn thiện và gửi Quản lý viện duyệt.', style: text.bodySmall),
         const SizedBox(height: 16),
@@ -256,9 +262,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
             labelText: 'Nội dung thay đổi',
             errorText: _submitted && _type == null ? 'Chọn nội dung thay đổi' : null,
           ),
-          items: const [
-            DropdownMenuItem(value: 'RESIDENCE_TYPE', child: Text('Loại lưu trú')),
-          ],
+          items: const [DropdownMenuItem(value: 'RESIDENCE_TYPE', child: Text('Loại lưu trú'))],
           onChanged: (v) => setState(() {
             _type = v;
             _value = null;
