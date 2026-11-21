@@ -12,13 +12,26 @@ const _residenceTypes = {
   'DAY_CARE': 'Bán trú',
 };
 
-/// Người đại diện gửi yêu cầu thay đổi lưu trú (004 T047; US5, FR-037, FR-039): đổi mức chăm sóc hoặc loại lưu trú. Yêu cầu
-/// được tạo ở Nháp, Hành chính được báo để hoàn thiện và gửi duyệt; người đại diện không trực tiếp thay đổi. Các loại khác
-/// (dịch vụ, giường, lịch đến, thời hạn) làm tại quầy. Chỉ trực tuyến.
+// Gợi ý lý do theo nội dung thay đổi; người đại diện chạm để điền rồi sửa tiếp
+const _reasonSuggestions = {
+  'RESIDENCE_TYPE': ['Gia đình đổi lịch sinh hoạt', 'Gia đình muốn người thân ở lại viện qua đêm'],
+};
+
+const _reasonMax = 2000;
+
+/// Người đại diện gửi yêu cầu thay đổi lưu trú (004 T047; US5, FR-037, FR-039): đổi loại lưu trú. Mức chăm sóc theo đánh
+/// giá của Bác sĩ (FR-043j), người đại diện không chọn mức. Yêu cầu
+/// được tạo ở Nháp, Hành chính được báo để hoàn thiện và gửi Quản lý viện duyệt; người đại diện không trực tiếp thay đổi.
+/// Các loại khác (dịch vụ, giường, lịch đến, thời hạn) làm tại quầy. Hợp đồng lấy qua cổng người thân (api-012
+/// `GET /family-portal/residents/{residentId}/contract`, chỉ người đại diện). Chỉ trực tuyến.
 class ChangeRequestScreen extends StatefulWidget {
-  const ChangeRequestScreen({super.key, required this.api});
+  const ChangeRequestScreen({super.key, required this.api, required this.residentId, this.today});
 
   final ApiClient api;
+  final int residentId;
+
+  /// Ngày hôm nay, để test cố định ngày; mặc định theo đồng hồ máy.
+  final DateTime? today;
 
   @override
   State<ChangeRequestScreen> createState() => _ChangeRequestScreenState();
@@ -38,9 +51,22 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
   String? _done;
   Object? _loadError;
 
+  DateTime get _today {
+    final now = widget.today ?? DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  Map<String, dynamic>? get _contract {
+    for (final c in _contracts ?? const <Map<String, dynamic>>[]) {
+      if (c['id'] == _contractId) return c;
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
+    _reason.addListener(() => setState(() {}));
     _load();
   }
 
@@ -53,10 +79,12 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
 
   Future<void> _load() async {
     try {
-      final items = (await widget.api.getList('/contracts?status=ACTIVE')).cast<Map<String, dynamic>>();
+      final body = await widget.api.get('/family-portal/residents/${widget.residentId}/contract');
+      final items = ((body?['contracts'] as List?) ?? const []).cast<Map<String, dynamic>>();
       if (!mounted) return;
       setState(() {
         _contracts = items.where((c) => c['status'] == 'ACTIVE').toList();
+        if (_contracts!.length == 1) _contractId = _contracts!.single['id'] as int;
         _loadError = null;
       });
     } on Exception catch (e) {
@@ -64,22 +92,73 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
     }
   }
 
-  // Ngày hiệu lực nhập dd/MM/yyyy, gửi yyyy-MM-dd; sai định dạng thì null
-  String? _isoDate() {
+  static String _two(int n) => n.toString().padLeft(2, '0');
+  static String _display(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';
+  static String _iso(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
+
+  static DateTime? _parseIso(Object? value) {
+    if (value is! String) return null;
+    return DateTime.tryParse(value);
+  }
+
+  // Ngày hiệu lực nhập dd/MM/yyyy; sai định dạng hoặc ngày không có thật (31/02) thì null
+  DateTime? _parsedDate() {
     final parts = _date.text.trim().split('/');
     if (parts.length != 3) return null;
     final day = int.tryParse(parts[0]);
     final month = int.tryParse(parts[1]);
     final year = int.tryParse(parts[2]);
-    if (day == null || month == null || year == null) return null;
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '$year-${two(month)}-${two(day)}';
+    if (day == null || month == null || year == null || year < 1000) return null;
+    final date = DateTime(year, month, day);
+    if (date.year != year || date.month != month || date.day != day) return null;
+    return date;
+  }
+
+  String? get _dateError {
+    if (_date.text.trim().isEmpty) return 'Nhập ngày hiệu lực mong muốn';
+    final date = _parsedDate();
+    if (date == null) return 'Ngày không hợp lệ, nhập theo dạng dd/MM/yyyy';
+    if (date.isBefore(_today)) return 'Ngày hiệu lực không được trước hôm nay';
+    final start = _parseIso(_contract?['startDate']);
+    if (start != null && date.isBefore(start)) {
+      return 'Ngày hiệu lực không được sớm hơn ngày bắt đầu hợp đồng (${_display(start)})';
+    }
+    return null;
+  }
+
+  String? get _currentValue => _contract?[_type == 'CARE_LEVEL' ? 'careLevel' : 'residenceType'] as String?;
+
+  String? get _valueError {
+    if (_value == null) return 'Chọn giá trị mới';
+    if (_value == _currentValue) return 'Giá trị mới trùng giá trị hiện tại';
+    return null;
+  }
+
+  String? get _reasonError {
+    final reason = _reason.text.trim();
+    if (reason.isEmpty) return 'Nhập lý do';
+    if (reason.length < 5) return 'Lý do quá ngắn, ghi rõ hơn để Hành chính xem xét';
+    return null;
+  }
+
+  Future<void> _pickDate() async {
+    final start = _parseIso(_contract?['startDate']);
+    final first = start != null && start.isAfter(_today) ? start : _today;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _parsedDate() != null && !_parsedDate()!.isBefore(first) ? _parsedDate()! : first,
+      firstDate: first,
+      lastDate: DateTime(_today.year + 5),
+      helpText: 'Ngày hiệu lực mong muốn',
+    );
+    if (picked != null) setState(() => _date.text = _display(picked));
   }
 
   Future<void> _send() async {
     setState(() => _submitted = true);
-    final iso = _isoDate();
-    if (_contractId == null || _type == null || _value == null || iso == null || _reason.text.trim().isEmpty) return;
+    if (_contractId == null || _type == null || _valueError != null || _dateError != null || _reasonError != null) {
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -91,12 +170,12 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
           'contractId': _contractId,
           'changeTypes': [_type],
           'newValue': {_type == 'CARE_LEVEL' ? 'careLevel' : 'residenceType': _value},
-          'requestedEffectiveDate': iso,
+          'requestedEffectiveDate': _iso(_parsedDate()!),
           'reason': _reason.text.trim(),
         },
         headers: {'Idempotency-Key': _key},
       );
-      if (mounted) setState(() => _done = 'Đã gửi yêu cầu, Hành chính sẽ hoàn thiện và gửi duyệt.');
+      if (mounted) setState(() => _done = 'Đã gửi yêu cầu, Hành chính sẽ hoàn thiện và gửi Quản lý viện duyệt.');
     } on Exception catch (e) {
       if (mounted) setState(() => _error = backendMessage(e));
     } finally {
@@ -127,7 +206,19 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
         child: Semantics(liveRegion: true, child: Text(_done!, style: text.bodyMedium)),
       );
     }
+    if (_contracts!.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Người thân chưa có hợp đồng đang hiệu lực nên chưa gửi được yêu cầu thay đổi. Liên hệ Hành chính của viện.',
+          style: text.bodyMedium,
+        ),
+      );
+    }
     final values = _type == 'CARE_LEVEL' ? _careLevels : _residenceTypes;
+    final contract = _contract;
+    final current = _currentValue;
+    final tomorrow = _today.add(const Duration(days: 1));
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -147,6 +238,17 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
           ],
           onChanged: (v) => setState(() => _contractId = v),
         ),
+        if (contract != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            [
+              if (contract['residenceType'] != null) 'Hiện tại: ${_residenceTypes[contract['residenceType']]}',
+              if (contract['careLevel'] != null) 'mức ${_careLevels[contract['careLevel']]}',
+              if (_parseIso(contract['startDate']) != null) 'bắt đầu ${_display(_parseIso(contract['startDate'])!)}',
+            ].join(', '),
+            style: text.bodySmall,
+          ),
+        ],
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _type,
@@ -155,7 +257,6 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
             errorText: _submitted && _type == null ? 'Chọn nội dung thay đổi' : null,
           ),
           items: const [
-            DropdownMenuItem(value: 'CARE_LEVEL', child: Text('Mức chăm sóc')),
             DropdownMenuItem(value: 'RESIDENCE_TYPE', child: Text('Loại lưu trú')),
           ],
           onChanged: (v) => setState(() {
@@ -166,14 +267,27 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
         if (_type != null) ...[
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
+            key: ValueKey(_type),
             initialValue: _value,
             decoration: InputDecoration(
               labelText: 'Giá trị mới',
-              errorText: _submitted && _value == null ? 'Chọn giá trị mới' : null,
+              helperText: current != null ? 'Hiện tại: ${values[current]}' : null,
+              errorText: _submitted ? _valueError : null,
             ),
-            items: [for (final e in values.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+            items: [
+              for (final e in values.entries)
+                if (e.key != current) DropdownMenuItem(value: e.key, child: Text(e.value)),
+            ],
             onChanged: (v) => setState(() => _value = v),
           ),
+          if (_type == 'RESIDENCE_TYPE') ...[
+            const SizedBox(height: 4),
+            Text(
+              'Đổi sang bán trú cần lịch đến, sang nội trú cần giường, nội trú ngắn ngày cần thời hạn: Hành chính sẽ liên hệ '
+              'để bổ sung.',
+              style: text.bodySmall,
+            ),
+          ],
         ],
         const SizedBox(height: 12),
         TextField(
@@ -181,20 +295,46 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
           keyboardType: TextInputType.datetime,
           decoration: InputDecoration(
             labelText: 'Ngày hiệu lực mong muốn (dd/MM/yyyy)',
-            errorText: _submitted && _isoDate() == null ? 'Nhập ngày hiệu lực mong muốn' : null,
+            helperText: 'Duyệt muộn hơn ngày này thì thay đổi tính từ ngày duyệt.',
+            errorText: _submitted ? _dateError : null,
+            suffixIcon: IconButton(
+              tooltip: 'Chọn ngày trên lịch',
+              icon: const Icon(Icons.calendar_month),
+              onPressed: _pickDate,
+            ),
           ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          children: [
+            ActionChip(
+              label: Text('Ngày mai (${_display(tomorrow)})'),
+              onPressed: () => setState(() => _date.text = _display(tomorrow)),
+            ),
+            ActionChip(
+              label: const Text('Đầu tháng sau'),
+              onPressed: () => setState(() => _date.text = _display(DateTime(_today.year, _today.month + 1))),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _reason,
-          maxLength: 2000,
+          maxLength: _reasonMax,
           minLines: 2,
           maxLines: 4,
-          decoration: InputDecoration(
-            labelText: 'Lý do',
-            errorText: _submitted && _reason.text.trim().isEmpty ? 'Nhập lý do' : null,
-          ),
+          decoration: InputDecoration(labelText: 'Lý do', errorText: _submitted ? _reasonError : null),
         ),
+        if (_type != null && _reason.text.trim().isEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final s in _reasonSuggestions[_type]!) ActionChip(label: Text(s), onPressed: () => _reason.text = s),
+            ],
+          ),
         if (_error != null) ...[
           const SizedBox(height: 8),
           Semantics(liveRegion: true, child: Text(_error!, style: text.bodySmall)),

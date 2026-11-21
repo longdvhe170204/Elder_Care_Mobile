@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
 import '../../common/widgets/status_pill.dart';
+import '../admissions/change_confirmation_screen.dart';
+import '../admissions/change_request_screen.dart';
 import '../balance/family_balance_screen.dart';
 import '../belongings/family_belongings_screen.dart';
 import '../charges/family_costs_screen.dart';
@@ -258,6 +260,32 @@ class _ResidentPortalScreenState extends State<ResidentPortalScreen> {
                       ),
                     ),
                     child: const Text('Đề nghị mua hộ'),
+                  ),
+                  // 004 FR-039: người đại diện gửi yêu cầu thay đổi lưu trú, Hành chính hoàn thiện và gửi duyệt
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Thay đổi lưu trú')),
+                          body: ChangeRequestScreen(api: widget.api, residentId: _residentId),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Đề nghị thay đổi lưu trú'),
+                  ),
+                  // 004 FR-043c: viện gửi yêu cầu thay đổi lưu trú để người đại diện xác nhận
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Thay đổi chờ xác nhận')),
+                          body: ChangeConfirmationList(api: widget.api, residentId: _residentId),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Thay đổi lưu trú chờ xác nhận'),
                   ),
                 ],
                 if (_belongings) ...[
