@@ -1,13 +1,21 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/format/date_time.dart';
+import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/page_body.dart';
 import '../../common/widgets/status_pill.dart';
+import '../medication/dose_sheet.dart';
+import '../medication/medication_labels.dart';
+import '../medication/medication_round_repository.dart';
+import '../medication/medication_round_screen.dart' show medicationCommandKey;
 import 'care_checklist_repository.dart';
 import 'care_result_form.dart';
 import 'care_task_context.dart';
+import 'shift_journey.dart';
+import 'shift_steps.dart';
 
 String careCommandKey() {
   final random = Random.secure();
@@ -19,11 +27,24 @@ String careCommandKey() {
 }
 
 /// Nhận accountId/shiftId từ shell của A; không tự chọn một ca hoặc một tài khoản giả.
+/// `links` (luồng 2.2 SRS): có thì đầu màn có dải Tiến trình ca và thẻ công việc có nút Báo sự cố.
 class CareChecklistScreen extends StatefulWidget {
-  const CareChecklistScreen({super.key, required this.repository, required this.accountId, required this.shiftId});
+  const CareChecklistScreen({
+    super.key,
+    required this.repository,
+    required this.accountId,
+    required this.shiftId,
+    this.links,
+    this.medication,
+  });
   final CareChecklistRepository repository;
   final int accountId;
   final int shiftId;
+  final ShiftJourneyLinks? links;
+
+  /// Có quyền phát thuốc thì dòng liều bấm được, mở "Đối chiếu liều thuốc" (spec 2026-11-20 mục 5.2: liều thuốc là một
+  /// dòng của Checklist ca, không còn mục Phát thuốc riêng); `null` thì dòng chỉ xem.
+  final MedicationRoundRepository? medication;
   @override
   State<CareChecklistScreen> createState() => _CareChecklistScreenState();
 }
@@ -33,6 +54,10 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
   String? error;
   bool busy = false;
   int generation = 0;
+  List<Map<String, dynamic>>? incidents;
+  bool incidentsLoading = true;
+  ShiftHandover handover = const ShiftHandover.loading();
+  int journeyGeneration = 0;
   @override
   void initState() {
     super.initState();
@@ -58,6 +83,7 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
       busy = true;
       error = null;
     });
+    unawaited(loadJourney());
     try {
       final next = await widget.repository.load(accountId, shiftId);
       if (mounted && generation == token) setState(() => loaded = next);
@@ -70,6 +96,114 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
       }
     } finally {
       if (mounted && generation == token) setState(() => busy = false);
+    }
+  }
+
+  /// Mở "Đối chiếu liều thuốc" (Figma 5:290) cho liều [doseKey] bằng khung ghi liều của vòng phát thuốc (006); liều
+  /// không ghi được lúc này (chưa đến giờ, đã ghi, đang chờ đồng bộ) thì báo, không mở.
+  Future<void> openDose(String doseKey) async {
+    final medication = widget.medication!;
+    final messenger = ScaffoldMessenger.of(context);
+    List<Map<String, dynamic>> items;
+    try {
+      final round = await medication.load(widget.accountId);
+      items = round.round.items
+          .where((i) => (i['dose'] as Map)['doseKey'] == doseKey)
+          .where((i) => doseRecordable((i['dose'] as Map)['status'] as String?))
+          .where((i) => !round.queued.containsKey(doseKey))
+          .toList();
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Không tải được liều thuốc. Kiểm tra kết nối rồi thử lại.')));
+      return;
+    }
+    if (!mounted) return;
+    if (items.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Liều này chưa ghi nhận được lúc này.')));
+      return;
+    }
+    final result = await Navigator.of(context).push<DoseSheetResult>(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: headerAppBar(context, title: 'Đối chiếu liều thuốc'),
+          body: DoseSheet(
+            repository: medication,
+            accountId: widget.accountId,
+            items: items,
+            newKey: medicationCommandKey,
+            clock: DateTime.now,
+          ),
+        ),
+      ),
+    );
+    if (result != null && mounted) await load();
+  }
+
+  /// Sự cố và bàn giao của ca cho dải Tiến trình ca; lỗi chỉ làm dòng đó ghi "Chưa tải được", không chặn checklist.
+  Future<void> loadJourney() async {
+    final links = widget.links;
+    if (links == null) return;
+    final token = ++journeyGeneration;
+    final shiftId = widget.shiftId;
+    setState(() {
+      incidentsLoading = true;
+      handover = const ShiftHandover.loading();
+    });
+    await Future.wait([
+      links.incidents().then<void>(
+        (rows) {
+          if (mounted && journeyGeneration == token) {
+            setState(() {
+              incidents = rows;
+              incidentsLoading = false;
+            });
+          }
+        },
+        onError: (Object _) {
+          if (mounted && journeyGeneration == token) {
+            setState(() {
+              incidents = null;
+              incidentsLoading = false;
+            });
+          }
+        },
+      ),
+      links.handover(shiftId).then<void>(
+        (body) {
+          if (mounted && journeyGeneration == token) {
+            setState(() => handover = body == null ? const ShiftHandover.none() : ShiftHandover.of(body));
+          }
+        },
+        onError: (Object _) {
+          if (mounted && journeyGeneration == token) setState(() => handover = const ShiftHandover.failed());
+        },
+      ),
+    ]);
+  }
+
+  List<Map<String, dynamic>> residentsOf(List<Map<String, dynamic>> tasks) {
+    final seen = <Object?>{};
+    return [
+      for (final t in tasks)
+        if (t['residentId'] != null && seen.add(t['residentId']))
+          {'id': t['residentId'], 'name': (t['residentCard'] as Map?)?['fullName'] ?? 'Người cao tuổi ${t['residentId']}'},
+    ];
+  }
+
+  Future<void> report(int? residentId) async {
+    final saved = await widget.links!.reportIncident(context, residentId);
+    if (saved && mounted) await loadJourney();
+  }
+
+  Future<void> journeyAction(String key, List<Map<String, dynamic>> tasks) async {
+    final links = widget.links!;
+    switch (key) {
+      case 'previous' || 'handover':
+        await links.openHandover(context, widget.shiftId);
+        if (mounted) await loadJourney();
+      case 'plan':
+        await links.openPlans(context, residentsOf(tasks));
+      case 'incidents':
+        await report(null);
     }
   }
 
@@ -148,6 +282,16 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                     : 'Đang ngoại tuyến. Bản ghi sẽ đồng bộ khi có mạng.',
               ),
             TextButton(onPressed: busy ? null : load, child: const Text('Tải lại checklist')),
+            if (widget.links != null && loaded != null)
+              ShiftJourney(
+                steps: buildShiftSteps(
+                  tasks: tasks,
+                  incidents: incidents,
+                  incidentsLoading: incidentsLoading,
+                  handover: handover,
+                ),
+                onAction: (key) => journeyAction(key, tasks),
+              ),
             if (loaded != null && tasks.isEmpty) const Text('Chưa có công việc trong phạm vi được giao.'),
             for (final dose in (data?['medicationDoses'] as List? ?? []).map(
               (d) => Map<String, dynamic>.from(d as Map),
@@ -157,6 +301,8 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                 subtitle: dose['plannedAt'] == null
                     ? null
                     : Text('Dự kiến ${formatTime(DateTime.parse(dose['plannedAt'] as String))}'),
+                trailing: widget.medication == null ? null : const Icon(Icons.chevron_right),
+                onTap: widget.medication == null ? null : () => openDose(dose['doseKey'] as String),
               ),
             for (final alert in (data?['openAlerts'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
               ListTile(title: Text('Cảnh báo #${alert['id']}')),
@@ -197,6 +343,11 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                               (a) => Map<String, dynamic>.from(a as Map),
                             ))
                               Text(agreement['choice'] as String? ?? ''),
+                          if (widget.links != null && task['residentId'] != null)
+                            OutlinedButton(
+                              onPressed: () => report(task['residentId'] as int),
+                              child: const Text('Báo sự cố'),
+                            ),
                           if (loaded?.offline == false && (task['allowedCommands'] as List? ?? []).contains('claim'))
                             OutlinedButton(
                               onPressed: busy ? null : () => claim(task),

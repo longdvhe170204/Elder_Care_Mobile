@@ -24,10 +24,8 @@ void main() {
     await current.start();
     await tester.pumpWidget(ElderCareApp(session: current, queue: memoryQueue(current)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Thêm'));
-    await tester.pumpAndSettle();
     expect(find.byType(NavigationDestination), findsNWidgets(5));
-    await tester.tap(find.text('Chăm sóc hằng ngày'));
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Checklist'));
     await tester.pumpAndSettle();
     expect(find.text('Checklist ca'), findsOneWidget);
     expect(tester.takeException(), isNull);

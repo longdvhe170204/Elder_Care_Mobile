@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app.dart';
+import 'package:mobile/common/auth/login_screen.dart';
 import 'package:mobile/common/auth/secure_store.dart';
 import 'package:mobile/common/auth/session_controller.dart';
 
@@ -21,8 +22,8 @@ Future<SessionController> pumpApp(WidgetTester tester, FakeBackend backend, Memo
 }
 
 Future<void> login(WidgetTester tester, String username, String password) async {
-  await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), username);
-  await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), password);
+  await tester.enterText(find.byKey(LoginScreen.usernameKey), username);
+  await tester.enterText(find.byKey(LoginScreen.passwordKey), password);
   await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
   await tester.pumpAndSettle();
 }
@@ -40,9 +41,9 @@ void main() {
     backend.on('POST', '/auth/login', 200, {'token': 'staff-1', 'user': user('STAFF')});
     await pumpApp(tester, backend, store);
 
-    expect(find.textContaining('kết thúc phiên của người trước'), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), ' dieu-duong-1 ');
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), 'matkhau123');
+    // Câu máy dùng chung bỏ khỏi màn đăng nhập theo mẫu Figma 88:254 (anh chốt 2026-11-21); backend vẫn kết thúc phiên trước.
+    await tester.enterText(find.byKey(LoginScreen.usernameKey), ' dieu-duong-1 ');
+    await tester.enterText(find.byKey(LoginScreen.passwordKey), 'matkhau123');
     await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
     await tester.pumpAndSettle();
 
@@ -74,6 +75,10 @@ void main() {
     await pumpApp(tester, backend, store);
     await login(tester, 'dieu-duong-1', 'matkhau123');
 
+    // Đăng xuất ở cuối mục Thêm (Figma 03 · App nhân viên, spec 2026-11-20).
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Thêm'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Đăng xuất'), 200);
     await tester.tap(find.text('Đăng xuất'));
     await tester.pumpAndSettle();
 

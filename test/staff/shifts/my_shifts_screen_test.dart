@@ -27,7 +27,13 @@ Map<String, dynamic> nightShift({String status = 'PUBLISHED', int? leadStaffId =
   'version': 3,
 };
 
-Future<void> pumpScreen(WidgetTester tester, ApiClient api, {bool dark = false, double scale = 1}) async {
+Future<void> pumpScreen(
+  WidgetTester tester,
+  ApiClient api, {
+  bool dark = false,
+  double scale = 1,
+  DateTime? now,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: dark ? AppTheme.dark() : AppTheme.light(),
@@ -36,7 +42,7 @@ Future<void> pumpScreen(WidgetTester tester, ApiClient api, {bool dark = false, 
         child: child!,
       ),
       home: Scaffold(
-        body: MyShiftsScreen(api: api, now: DateTime.utc(2026, 10, 28)),
+        body: MyShiftsScreen(api: api, now: now ?? DateTime.utc(2026, 10, 28)),
       ),
     ),
   );
@@ -64,6 +70,15 @@ void main() {
     expect(find.text('Nhân viên trong ca: 2'), findsOneWidget);
     expect(find.text('Hủy ca'), findsNothing);
     expect(backend.requests.every((r) => r.method == 'GET'), isTrue);
+  });
+
+  testWidgets('FR_033_progressUsesActiveOvernightShiftTimes', (tester) async {
+    backend.on('GET', '/me/shifts', 200, [nightShift(status: 'IN_PROGRESS')]);
+    await pumpScreen(tester, backend.client(), now: DateTime.utc(2026, 10, 28, 18));
+
+    expect(find.text('Ca đang diễn ra'), findsOneWidget);
+    expect(find.text('22:00–07:00 · Còn 6 giờ'), findsOneWidget);
+    expect(tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).value, closeTo(1 / 3, 0.01));
   });
 
   testWidgets('FR_020_detailsExposeAllowedAbsenceCommandAndReloadServerStateAfterSuccess', (tester) async {

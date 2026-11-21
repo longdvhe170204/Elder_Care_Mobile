@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../common/api/api_client.dart';
 import '../../common/auth/secure_store.dart';
 import '../../common/auth/session_controller.dart';
+import '../../common/theme/app_theme.dart';
 
 // Nút "Gọi người giúp" của người cao tuổi (012 T071, T074; FR-085, Q-372 → Q-374; 007 FR-047d, FR-047f, FR-047h,
 // FR-047j; DESIGN.md 15.6). Lệnh /sos thuộc 007, dùng token thiết bị (002 research A-15), không cần phiên. Không xếp hàng
@@ -107,10 +108,14 @@ class SosButton extends StatelessWidget {
         button: true,
         label: 'Gọi người giúp. Chạm để gửi, có ba giây để hủy.',
         excludeSemantics: true,
-        child: SizedBox(
-          height: 72,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 72),
           child: FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: colors.error, foregroundColor: colors.onError),
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.error,
+              foregroundColor: colors.onError,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+            ),
             onPressed: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
                 builder: (_) =>

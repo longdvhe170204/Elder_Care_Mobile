@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile/common/api/api_client.dart';
+import 'package:mobile/common/auth/forgot_password_screen.dart';
 import 'package:mobile/common/auth/login_screen.dart';
 import 'package:mobile/common/theme/app_theme.dart';
 
@@ -49,26 +50,28 @@ void main() {
   }
 
   Future<void> fillConfirm(WidgetTester tester, String code) async {
-    await tester.enterText(find.widgetWithText(TextField, 'Mã trong tin nhắn'), code);
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu mới'), 'moi12345');
-    await tester.enterText(find.widgetWithText(TextField, 'Nhập lại mật khẩu mới'), 'moi12345');
+    await tester.enterText(find.byKey(ForgotPasswordScreen.codeKey), code);
+    await tester.enterText(find.byKey(ForgotPasswordScreen.newPasswordKey), 'moi12345');
+    await tester.enterText(find.byKey(ForgotPasswordScreen.againKey), 'moi12345');
+    await tester.ensureVisible(find.text('Đặt mật khẩu mới'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Đặt mật khẩu mới'));
     await tester.pumpAndSettle();
   }
 
   testWidgets('Q_06_chuaCauHinh_anQuenMatKhau', (tester) async {
     await open(tester, backend(false, []));
-    expect(find.text('Quên mật khẩu'), findsNothing);
+    expect(find.text('Quên mật khẩu?'), findsNothing);
   });
 
   testWidgets('FR_052a_xinMa_datMatKhauMoi_quayVeDangNhap', (tester) async {
     final sent = <http.Request>[];
     await open(tester, backend(true, sent));
 
-    await tester.tap(find.text('Quên mật khẩu'));
+    await tester.tap(find.text('Quên mật khẩu?'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), ' nt-a ');
-    await tester.tap(find.text('Gửi mã'));
+    await tester.enterText(find.byKey(ForgotPasswordScreen.usernameKey), ' nt-a ');
+    await tester.tap(find.text('Xác nhận'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Nếu tài khoản có số điện thoại đã đăng ký'), findsOneWidget);
     await fillConfirm(tester, '123456');
@@ -84,14 +87,14 @@ void main() {
   testWidgets('FR_052a_maSai_hienCauMayChu_giuManNhapMa', (tester) async {
     await open(tester, backend(true, [], confirmStatus: 422));
 
-    await tester.tap(find.text('Quên mật khẩu'));
+    await tester.tap(find.text('Quên mật khẩu?'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), 'nt-a');
-    await tester.tap(find.text('Gửi mã'));
+    await tester.enterText(find.byKey(ForgotPasswordScreen.usernameKey), 'nt-a');
+    await tester.tap(find.text('Xác nhận'));
     await tester.pumpAndSettle();
     await fillConfirm(tester, '000000');
 
     expect(find.text('Mã không đúng, đã hết hạn hoặc không còn hiệu lực'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'Mã trong tin nhắn'), findsOneWidget);
+    expect(find.byKey(ForgotPasswordScreen.codeKey), findsOneWidget);
   });
 }

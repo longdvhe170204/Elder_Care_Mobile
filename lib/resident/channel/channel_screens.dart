@@ -172,7 +172,16 @@ class ScheduleScreen extends StatelessWidget {
 }
 
 /// Các dòng của lịch hôm nay theo giờ: "10:00 Tập dưỡng sinh", "15:00 [người thăm] đến thăm".
-List<String> todayLines(Map<String, dynamic> today) {
+List<String> todayLines(Map<String, dynamic> today) => [for (final l in _todayEntries(today)) l.$2];
+
+/// Việc đầu tiên của lịch hôm nay từ giờ [now] (giờ Việt Nam) trở đi, cho khối "Sắp tới" (spec 2026-11-20 mục 7);
+/// `null` khi không còn việc.
+String? nextTodayLine(Map<String, dynamic> today, DateTime now) {
+  final at = formatTime(now);
+  return _todayEntries(today).where((l) => l.$1.compareTo(at) >= 0).firstOrNull?.$2;
+}
+
+List<(String, String)> _todayEntries(Map<String, dynamic> today) {
   final lines = <(String, String)>[];
   for (final v in (today['visits'] as List<dynamic>).cast<Map<String, dynamic>>().map(ChannelVisit.new)) {
     lines.add((v.startTime, '${v.startTime} ${v.who} đến thăm'));
@@ -186,7 +195,7 @@ List<String> todayLines(Map<String, dynamic> today) {
     lines.add((d['departureTime'] as String, '${d['departureTime']} Về nhà'));
   }
   lines.sort((a, b) => a.$1.compareTo(b.$1));
-  return [for (final l in lines) l.$2];
+  return lines;
 }
 
 /// "Bữa ăn": thực đơn tuần và suất ăn dự kiến (012 FR-083 (b)); không có tên chế độ ăn. 011 chưa có nguồn thì báo chưa có.

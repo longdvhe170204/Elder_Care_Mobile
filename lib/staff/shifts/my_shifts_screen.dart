@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
 import '../../common/format/date_time.dart';
+import '../../common/theme/app_theme.dart';
 import '../../common/widgets/page_body.dart';
 import '../../common/widgets/status_pill.dart';
 import 'my_shifts_controller.dart';
@@ -25,16 +26,23 @@ class MyShiftsScreen extends StatefulWidget {
 
 class _MyShiftsScreenState extends State<MyShiftsScreen> {
   late final MyShiftsController _controller;
+  late DateTime _now;
+  Timer? _clock;
 
   @override
   void initState() {
     super.initState();
+    _now = widget.now ?? DateTime.now();
     _controller = MyShiftsController(api: widget.api, now: widget.now);
     unawaited(_controller.load());
+    if (widget.now == null) {
+      _clock = Timer.periodic(const Duration(minutes: 1), (_) => setState(() => _now = DateTime.now()));
+    }
   }
 
   @override
   void dispose() {
+    _clock?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -50,16 +58,31 @@ class _MyShiftsScreenState extends State<MyShiftsScreen> {
     if (refresh == true && mounted) await _controller.load();
   }
 
+  (DateTime, DateTime)? get _activeInterval {
+    for (final shift in _controller.shifts) {
+      if (shift['status'] != 'IN_PROGRESS') continue;
+      final start = DateTime.parse(shift['startsAt'] as String);
+      final end = DateTime.parse(shift['endsAt'] as String);
+      if (!_now.isBefore(start) && _now.isBefore(end)) return (start, end);
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: _controller,
     builder: (context, _) {
       final text = Theme.of(context).textTheme;
       final month = _controller.month;
+      final active = _activeInterval;
       return PageBody(
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
+            if (active != null) ...[
+              _ShiftProgress(start: active.$1, end: active.$2, now: _now),
+              const SizedBox(height: 20),
+            ],
             Text('Tháng ${month.month}/${month.year}', style: text.titleLarge),
             const SizedBox(height: 8),
             Wrap(
@@ -94,8 +117,7 @@ class _MyShiftsScreenState extends State<MyShiftsScreen> {
             else if (_controller.shifts.isEmpty)
               const _MessageCard(message: 'Bạn không có ca nào trong tháng này.')
             else
-              ColoredBox(
-                color: Theme.of(context).colorScheme.surface,
+              Card(
                 child: Column(
                   children: [
                     for (final (index, shift) in _controller.shifts.indexed) ...[
@@ -110,6 +132,64 @@ class _MyShiftsScreenState extends State<MyShiftsScreen> {
       );
     },
   );
+}
+
+class _ShiftProgress extends StatelessWidget {
+  const _ShiftProgress({required this.start, required this.end, required this.now});
+
+  final DateTime start;
+  final DateTime end;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tones = theme.extension<Tones>()!;
+    final remaining = end.difference(now);
+    final hours = remaining.inHours;
+    final minutes = remaining.inMinutes.remainder(60);
+    final timeLeft = [if (hours > 0) '$hours giờ', if (minutes > 0) '$minutes phút'].join(' ');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(LucideIcons.clock, color: theme.colorScheme.secondary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Ca đang diễn ra', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${formatTime(start)}–${formatTime(end)} · Còn ${timeLeft.isEmpty ? 'dưới 1 phút' : timeLeft}',
+                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            LinearProgressIndicator(
+              value: now.difference(start).inMilliseconds / end.difference(start).inMilliseconds,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              color: tones.brandGraphic,
+              semanticsLabel: 'Tiến độ ca',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _MessageCard extends StatelessWidget {

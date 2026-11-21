@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/common/auth/secure_store.dart';
+import 'package:mobile/common/auth/session_controller.dart';
 import 'package:mobile/common/theme/app_theme.dart';
 import 'package:mobile/staff/resident_login_qr/resident_login_qr_screen.dart';
 import 'package:mobile/staff/staff_root.dart';
@@ -150,8 +151,13 @@ void main() {
     expect(find.text('Tạo mã QR'), findsNothing);
   });
 
-  testWidgets('DESIGN_15_4_mucThem_moPheDuyetVaMaDangNhap', (tester) async {
-    final s = session(backend, MemoryStore(), FakeBiometric());
+  // Spec 2026-11-20: Phê duyệt chỉ ở web; Mã đăng nhập ở nhóm việc của Điều dưỡng trong Thêm.
+  testWidgets('DESIGN_15_4_mucThem_moMaDangNhap_khongPheDuyet', (tester) async {
+    backend.on('GET', '/me', 200, user('STAFF'));
+    final store = MemoryStore();
+    await store.write(SessionController.tokenKey, 'session-1');
+    final s = session(backend, store, FakeBiometric());
+    await s.start();
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -163,14 +169,14 @@ void main() {
     expect(find.widgetWithText(NavigationDestination, 'Phê duyệt'), findsNothing);
     await tester.tap(find.widgetWithText(NavigationDestination, 'Thêm'));
     await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsOneWidget);
+    expect(find.text('Phê duyệt'), findsNothing);
 
-    await tester.tap(find.text('Mã đăng nhập cho người cao tuổi'));
+    await tester.tap(find.text('Mã đăng nhập'));
     await tester.pumpAndSettle();
     expect(find.text('Nguyễn Thị Lan'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Quay lại'));
     await tester.pumpAndSettle();
-    expect(find.text('Mã đăng nhập cho người cao tuổi'), findsOneWidget);
+    expect(find.text('Mã đăng nhập'), findsOneWidget);
   });
 }

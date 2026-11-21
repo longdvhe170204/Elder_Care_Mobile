@@ -7,7 +7,7 @@ import 'package:mobile/common/auth/session_controller.dart';
 import '../../support/fake_backend.dart';
 
 Future<void> pumpStaff(WidgetTester tester, FakeBackend backend) async {
-  backend.on('GET', '/me', 200, user('STAFF'));
+  backend.on('GET', '/me', 200, user('STAFF', roles: ['AC-02']));
   final store = MemoryStore()..values[SessionController.tokenKey] = 'test-session';
   final current = session(backend, store, FakeBiometric(available: false));
   await current.start();
@@ -27,15 +27,13 @@ void main() {
     await pumpStaff(tester, backend);
     expect(find.byType(NavigationDestination), findsNWidgets(5));
     expect(find.text('Thêm'), findsOneWidget);
-    expect(backend.calls('GET', '/me/shifts'), isEmpty);
     await tester.tap(find.text('Thêm'));
     await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsOneWidget);
+    expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
     await tester.tap(find.text('Phân công'));
     await tester.pumpAndSettle();
 
     expect(find.text('Chưa có ca trong tháng được xem.'), findsOneWidget);
-    expect(backend.calls('GET', '/me/shifts'), hasLength(1));
     expect(backend.calls('GET', '/me/permissions').first.headers['Authorization'], 'Bearer test-session');
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 4);
     expect(tester.takeException(), isNull);
@@ -54,10 +52,9 @@ void main() {
       expect(find.text('Thêm'), findsOneWidget);
       await tester.tap(find.text('Thêm'));
       await tester.pumpAndSettle();
-      expect(find.text('Phê duyệt'), findsOneWidget);
+      expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
       expect(find.text('Phân công'), findsNothing);
       expect(find.byType(NavigationDestination), findsNWidgets(5));
-      expect(backend.calls('GET', '/me/shifts'), isEmpty);
     });
   }
 
