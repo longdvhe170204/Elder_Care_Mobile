@@ -7,6 +7,7 @@ import '../../common/format/date_time.dart';
 import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/page_body.dart';
 import '../../common/widgets/status_pill.dart';
+import '../alerts/alert_follow_up_screen.dart';
 import '../alerts/alert_labels.dart';
 import '../medication/dose_sheet.dart';
 import '../medication/medication_labels.dart';
@@ -37,8 +38,12 @@ class CareChecklistScreen extends StatefulWidget {
     required this.shiftId,
     this.links,
     this.medication,
+    this.alertsApi,
   });
   final CareChecklistRepository repository;
+
+  /// Có thì nhãn "Đang theo dõi" bấm được, mở "Theo dõi cảnh báo" để ghi kết quả theo dõi (005 FR-057, Q-419).
+  final ApiClient? alertsApi;
   final int accountId;
   final int shiftId;
   final ShiftJourneyLinks? links;
@@ -331,7 +336,27 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                           if (widget.repository.pendingTaskIds.contains(task['id'])) const Text('Chưa đồng bộ'),
                           CareTaskContext(task: task),
                           if (followingLabel(data?['openAlerts'] as List?, task['residentId']) case final label?)
-                            Text(label, style: Theme.of(context).textTheme.bodyMedium),
+                            if (widget.alertsApi case final api?)
+                              TextButton(
+                                style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                                onPressed: () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => Scaffold(
+                                      appBar: AppBar(title: const Text('Theo dõi cảnh báo')),
+                                      body: AlertFollowUpScreen(
+                                        api: api,
+                                        alertIds: followingAlertIds(
+                                          data?['openAlerts'] as List?,
+                                          task['residentId'],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                child: Text('$label ›'),
+                              )
+                            else
+                              Text(label, style: Theme.of(context).textTheme.bodyMedium),
                           if (task['awaitingRemeasurementConfirmation'] == true) const Text('Chờ xác nhận đo lại'),
                           if ((loaded?.offline == false || widget.repository.recorder != null) &&
                               (task['allowedCommands'] as List? ?? []).contains('record'))

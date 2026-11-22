@@ -138,6 +138,7 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
               shiftId: selected,
               links: apiShiftJourneyLinks(widget.api),
               medication: widget.medication,
+              alertsApi: widget.api,
             ),
           ),
         );
