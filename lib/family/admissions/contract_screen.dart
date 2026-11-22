@@ -26,11 +26,16 @@ const _depositStatus = {
   'NOT_REQUIRED': 'Không yêu cầu đặt cọc',
 };
 
+// Trạng thái phụ lục (004 FR-043d, FR-043f): Chờ ký tới khi viện ghi nhận bản đã ký
 const _addendumStatus = {
+  'PENDING_SIGNATURE': 'Chờ ký',
   'PENDING_EFFECTIVE': 'Chờ hiệu lực',
   'APPLIED': 'Đã áp dụng',
-  'NOT_APPLICABLE': 'Áp dụng không thành',
+  'NOT_APPLICABLE': 'Không áp dụng',
+  'CANCELLED': 'Đã hủy',
 };
+
+String _addendumLead(Object? no) => no is int ? 'Phụ lục số ${no.toString().padLeft(2, '0')}, hiệu lực' : 'Hiệu lực';
 
 String _money(Object? value) {
   final digits = '${value ?? 0}';
@@ -188,7 +193,8 @@ class _ContractCardState extends State<_ContractCard> {
               if (_addenda!.isEmpty) Text('Chưa có phụ lục.', style: theme.textTheme.bodyMedium),
               for (final a in _addenda!)
                 Text(
-                  'Hiệu lực ${formatDate(a['effectiveDate'] as String)}, ${_addendumStatus[a['status']] ?? a['status']}',
+                  '${_addendumLead(a['addendumNo'])} ${formatDate(a['effectiveDate'] as String)}, '
+                  '${_addendumStatus[a['status']] ?? a['status']}',
                   style: theme.textTheme.bodyMedium,
                 ),
             ],

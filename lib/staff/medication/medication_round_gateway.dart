@@ -1,10 +1,13 @@
 import '../../common/api/api_client.dart';
+import 'medication_labels.dart';
 
-/// Ba lệnh ghi kết quả liều của api-006 (`/medication-doses/{doseKey}/administer|refuse|skip`).
+/// Các lệnh ghi kết quả liều của api-006 (`/medication-doses/{doseKey}/administer|refuse|skip|postpone`). Hoãn có chủ
+/// đích (BR-M07-26) không đổi trạng thái liều và chỉ ghi được khi có mạng.
 enum DoseOutcome {
   administered('administer', 'ADMINISTERED', 'Đã dùng'),
   refused('refuse', 'REFUSED', 'Từ chối'),
-  notAdministered('skip', 'NOT_ADMINISTERED', 'Không thực hiện');
+  notAdministered('skip', 'NOT_ADMINISTERED', 'Không thực hiện'),
+  postponed('postpone', 'POSTPONED', 'Hoãn');
 
   const DoseOutcome(this.command, this.resultType, this.label);
 
@@ -23,6 +26,13 @@ abstract interface class MedicationRoundGateway {
   Future<Map<String, dynamic>> medication(int id);
   Future<Map<String, dynamic>> resident(int id);
   Future<void> record(String doseKey, DoseOutcome outcome, Map<String, dynamic> body, String key);
+
+  /// Nhận liều trước khi soạn thuốc, tự hết sau 15 phút (BR-M07-26); trả giờ hết hạn.
+  Future<DateTime?> claim(String doseKey, String key);
+  Future<void> release(String doseKey, String key);
+
+  /// Ghi "đã dùng muộn" cho liều Bỏ lỡ bằng bản đính chính của api-000 (Q-327, BR-M07-26).
+  Future<void> correctLate(int resultId, DateTime administeredAt, String reason, String key);
   Future<List<Map<String, dynamic>>> pendingReviews();
   Future<void> reviewResult(int id, String result, String? note, String key);
 }
@@ -55,6 +65,27 @@ class ApiMedicationRoundGateway implements MedicationRoundGateway {
   @override
   Future<void> record(String doseKey, DoseOutcome outcome, Map<String, dynamic> body, String key) async {
     await api.post('/medication-doses/$doseKey/${outcome.command}', body, headers: {'Idempotency-Key': key});
+  }
+
+  @override
+  Future<DateTime?> claim(String doseKey, String key) async {
+    final data = await api.post('/medication-doses/$doseKey/claim', <String, dynamic>{}, headers: {'Idempotency-Key': key});
+    final until = data?['claimExpiresAt'] as String?;
+    return until == null ? null : DateTime.parse(until);
+  }
+
+  @override
+  Future<void> release(String doseKey, String key) async {
+    await api.post('/medication-doses/$doseKey/release', <String, dynamic>{}, headers: {'Idempotency-Key': key});
+  }
+
+  @override
+  Future<void> correctLate(int resultId, DateTime administeredAt, String reason, String key) async {
+    await api.post('/corrections/M07.DOSE_RESULT/$resultId', {
+      'type': 'AMEND_CONTENT',
+      'correctedContent': {'resultType': 'ADMINISTERED', 'administeredAt': vnIso(administeredAt)},
+      'reason': reason,
+    }, headers: {'Idempotency-Key': key});
   }
 
   @override

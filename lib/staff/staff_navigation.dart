@@ -12,6 +12,7 @@ enum StaffPrimary { checklist, floorToday, residents, mealSlips }
 /// Mục của "Thêm": nhóm việc rồi nhóm công cụ.
 enum StaffFeature {
   medicationIntake,
+  familyMedication,
   incidents,
   alerts,
   servingConfirmation,
@@ -69,6 +70,10 @@ const _appRoles = {_floorManager, _doctor, _nurse, _caregiver, _kitchen};
 /// Mỗi mục: vai trò được có, và điều kiện quyền (`null` là chỉ lọc theo vai trò).
 final Map<StaffFeature, (Set<String>, bool Function(_Grants)?)> _features = {
   StaffFeature.medicationIntake: ({_nurse}, (g) => g.has('MEDICATION_RECEIPT:CREATE')),
+  StaffFeature.familyMedication: (
+    {_nurse},
+    (g) => g.has('MEDICATION_ADMINISTRATION:VIEW') || g.has('MEDICATION_ADMINISTRATION:PROFESSIONAL'),
+  ),
   StaffFeature.incidents: (
     _appRoles,
     (g) => g.has('INCIDENT_EMERGENCY:VIEW') || g.has('INCIDENT_EMERGENCY:UPDATE'),
