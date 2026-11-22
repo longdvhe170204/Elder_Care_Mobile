@@ -286,6 +286,12 @@ class _TodayScreenState extends State<TodayScreen> {
                         _scheduleLine,
                         () => _open(ScheduleScreen(api: api)),
                       ),
+                      _card(
+                        LucideIcons.calendarClock,
+                        'Chăm sóc hôm nay',
+                        null,
+                        () => _open(CareScheduleScreen(api: api)),
+                      ),
                       _card(LucideIcons.utensils, 'Bữa ăn', _menuLine, () => _open(MenuScreen(api: api))),
                       _card(LucideIcons.activity, 'Hoạt động', _activityLine, () => _open(ActivitiesScreen(api: api))),
                       _card(LucideIcons.usersRound, 'Người đến thăm', _visitLine, () => _open(VisitsScreen(api: api))),

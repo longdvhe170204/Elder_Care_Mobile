@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../common/api/api_client.dart';
+import '../../common/care/daily_care_schedule_screen.dart' show dailyCareStatusLabels, dailyCareStatusTone;
 import '../../common/format/date_time.dart';
 import '../../common/widgets/status_pill.dart';
 
@@ -167,6 +168,37 @@ class ScheduleScreen extends StatelessWidget {
       final lines = todayLines(data as Map<String, dynamic>);
       if (lines.isEmpty) return [Text('Hôm nay chưa có lịch.', style: Theme.of(context).textTheme.bodyLarge)];
       return [for (final line in lines) _Line(title: line)];
+    },
+  );
+}
+
+/// "Chăm sóc hôm nay" (012 FR-083 (a), Q-416): mốc chung, bữa, hoạt động và công việc chăm sóc của chính mình kèm trạng
+/// thái; không có kết quả đo, giờ thuốc.
+class CareScheduleScreen extends StatelessWidget {
+  const CareScheduleScreen({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  Widget build(BuildContext context) => _Loaded(
+    title: 'Chăm sóc hôm nay',
+    load: () => api.get('/resident-channel/daily-care-schedule'),
+    build: (context, data) {
+      final items = (((data as Map<String, dynamic>?)?['items'] as List<dynamic>?) ?? const [])
+          .cast<Map<String, dynamic>>();
+      if (items.isEmpty) return [Text('Hôm nay chưa có lịch.', style: Theme.of(context).textTheme.bodyLarge)];
+      return [
+        for (final item in items)
+          _Line(
+            title: '${formatTime(DateTime.parse(item['at'] as String))} ${item['name'] ?? ''}',
+            trailing: item['status'] == null
+                ? null
+                : StatusPill(
+                    label: dailyCareStatusLabels[item['status']] ?? '${item['status']}',
+                    tone: dailyCareStatusTone(item['status'] as String),
+                  ),
+          ),
+      ];
     },
   );
 }

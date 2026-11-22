@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
+import '../../common/care/daily_care_schedule_screen.dart';
 import '../../common/format/date_time.dart';
 import '../../common/widgets/status_pill.dart';
 import '../admissions/change_request_screen.dart';
@@ -51,7 +52,9 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.only(bottom: 12),
     clipBehavior: Clip.antiAlias,
-    child: Column(children: ListTile.divideTiles(context: context, tiles: rows).toList()),
+    child: Column(
+      children: ListTile.divideTiles(context: context, tiles: rows).toList(),
+    ),
   );
 }
 
@@ -140,6 +143,21 @@ class FamilyTodayTab extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _Group([
+            // Q-416, 012 FR-076: mọi người thân có quan hệ Hiệu lực; giá trị đo chỉ khi có quyền xem sức khỏe
+            _row(
+              LucideIcons.calendarClock,
+              'Lịch chăm sóc hằng ngày',
+              () => _push(
+                context,
+                'Lịch chăm sóc hằng ngày',
+                DailyCareScheduleScreen(
+                  api: api,
+                  path: '/family-portal/residents/${resident.id}/daily-care-schedule',
+                  residentName: resident.fullName,
+                ),
+              ),
+              subtitle: 'Mốc trong ngày, công việc chăm sóc và trạng thái',
+            ),
             _row(
               LucideIcons.calendarDays,
               'Lịch sinh hoạt và hoạt động',
@@ -265,12 +283,8 @@ class FamilyCostsTab extends StatelessWidget {
             _row(
               LucideIcons.clipboardList,
               'Bảng chi phí',
-              () => _push(
-                context,
-                'Bảng chi phí',
-                FamilyCostsScreen(api: api, residentId: resident.id),
-                scaffold: false,
-              ),
+              () =>
+                  _push(context, 'Bảng chi phí', FamilyCostsScreen(api: api, residentId: resident.id), scaffold: false),
             ),
           ])
         else
