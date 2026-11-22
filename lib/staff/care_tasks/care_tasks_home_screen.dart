@@ -11,13 +11,13 @@ import 'ad_hoc_care_recording_screen.dart';
 import 'care_api_gateways.dart';
 import 'care_checklist_cache.dart';
 import 'care_checklist_gateway.dart';
+import 'care_checklist_links.dart';
 import 'care_checklist_repository.dart';
 import 'care_checklist_screen.dart';
 import 'care_offline_recording.dart';
 import 'care_plans_screen.dart';
 import 'day_care_attendance_screen.dart';
 import 'overdue_tasks_screen.dart';
-import 'shift_journey.dart';
 import 'shift_task_planning_screen.dart';
 import 'weekly_checklist.dart';
 
@@ -74,7 +74,7 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
         shiftId: shift['id'] as int,
         shiftLabel: shiftLabel(shift),
         initialTaskId: taskId,
-        links: apiShiftJourneyLinks(widget.api),
+        links: apiCareChecklistLinks(widget.api),
         medication: widget.medication,
         alertsApi: widget.api,
       ),
@@ -138,7 +138,7 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
           repository: repository,
           accountId: widget.accountId,
           shiftId: selected,
-          links: apiShiftJourneyLinks(widget.api),
+          links: apiCareChecklistLinks(widget.api),
           medication: widget.medication,
           alertsApi: widget.api,
         ),
@@ -305,20 +305,8 @@ Widget _toolTile((IconData, String, VoidCallback) tool, VoidCallback onTap) => L
   onTap: onTap,
 );
 
-/// Lối đi của dải Tiến trình ca (luồng 2.2 SRS) bằng API thật: sự cố đang mở, bàn giao của ca (404 là chưa lập), màn
-/// Bàn giao ca chọn sẵn ca, kế hoạch chăm sóc, form Báo sự cố.
-ShiftJourneyLinks apiShiftJourneyLinks(ApiClient api) => ShiftJourneyLinks(
-  incidents: () async => (await api.getList(
-    '/incidents?status=NEW&status=IN_PROGRESS&status=MONITORING',
-  )).map((r) => Map<String, dynamic>.from(r as Map)).toList(),
-  handover: (shiftId) async {
-    try {
-      return await api.get('/shifts/$shiftId/handovers');
-    } on ApiProblem catch (e) {
-      if (e.status == 404) return null;
-      rethrow;
-    }
-  },
+/// Lối đi của Checklist ca bằng API thật: màn Bàn giao ca chọn sẵn ca, kế hoạch chăm sóc, form Báo sự cố.
+CareChecklistLinks apiCareChecklistLinks(ApiClient api) => CareChecklistLinks(
   openHandover: (context, shiftId) => Navigator.of(context).push<void>(
     MaterialPageRoute(
       builder: (_) => Scaffold(

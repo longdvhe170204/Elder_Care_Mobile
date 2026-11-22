@@ -15,11 +15,10 @@ import '../medication/dose_sheet.dart';
 import '../medication/medication_labels.dart';
 import '../medication/medication_round_repository.dart';
 import '../medication/medication_round_screen.dart' show medicationCommandKey;
+import 'care_checklist_links.dart';
 import 'care_checklist_repository.dart';
 import 'care_result_form.dart';
 import 'care_task_context.dart';
-import 'shift_journey.dart';
-import 'shift_steps.dart';
 
 String careCommandKey() {
   final random = Random.secure();
@@ -31,7 +30,7 @@ String careCommandKey() {
 }
 
 /// Nhận accountId/shiftId từ shell của A; không tự chọn một ca hoặc một tài khoản giả.
-/// `links` (luồng 2.2 SRS): có thì đầu màn có dải Tiến trình ca và thẻ công việc có nút Báo sự cố.
+/// `links`: có thì khung chi tiết công việc có Xem kế hoạch chăm sóc, Báo sự cố và dòng bàn giao mở được màn Bàn giao ca.
 class CareChecklistScreen extends StatefulWidget {
   const CareChecklistScreen({
     super.key,
@@ -50,7 +49,7 @@ class CareChecklistScreen extends StatefulWidget {
   final ApiClient? alertsApi;
   final int accountId;
   final int shiftId;
-  final ShiftJourneyLinks? links;
+  final CareChecklistLinks? links;
 
   /// Có quyền phát thuốc thì dòng liều bấm được, mở "Đối chiếu liều thuốc" (spec 2026-11-20 mục 5.2: liều thuốc là một
   /// dòng của Checklist ca, không còn mục Phát thuốc riêng); `null` thì dòng chỉ xem.
@@ -70,10 +69,6 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
   String? error;
   bool busy = false;
   int generation = 0;
-  List<Map<String, dynamic>>? incidents;
-  bool incidentsLoading = true;
-  ShiftHandover handover = const ShiftHandover.loading();
-  int journeyGeneration = 0;
   @override
   void initState() {
     super.initState();
@@ -99,7 +94,6 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
       busy = true;
       error = null;
     });
-    unawaited(loadJourney());
     try {
       final next = await widget.repository.load(accountId, shiftId);
       if (mounted && generation == token) {
@@ -169,74 +163,17 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     if (result != null && mounted) await load();
   }
 
-  /// Sự cố và bàn giao của ca cho dải Tiến trình ca; lỗi chỉ làm dòng đó ghi "Chưa tải được", không chặn checklist.
-  Future<void> loadJourney() async {
-    final links = widget.links;
-    if (links == null) return;
-    final token = ++journeyGeneration;
-    final shiftId = widget.shiftId;
-    setState(() {
-      incidentsLoading = true;
-      handover = const ShiftHandover.loading();
-    });
-    await Future.wait([
-      links.incidents().then<void>(
-        (rows) {
-          if (mounted && journeyGeneration == token) {
-            setState(() {
-              incidents = rows;
-              incidentsLoading = false;
-            });
-          }
-        },
-        onError: (Object _) {
-          if (mounted && journeyGeneration == token) {
-            setState(() {
-              incidents = null;
-              incidentsLoading = false;
-            });
-          }
-        },
-      ),
-      links.handover(shiftId).then<void>(
-        (body) {
-          if (mounted && journeyGeneration == token) {
-            setState(() => handover = body == null ? const ShiftHandover.none() : ShiftHandover.of(body));
-          }
-        },
-        onError: (Object _) {
-          if (mounted && journeyGeneration == token) setState(() => handover = const ShiftHandover.failed());
-        },
-      ),
-    ]);
-  }
+  Future<void> report(int? residentId) => widget.links!.reportIncident(context, residentId);
 
-  List<Map<String, dynamic>> residentsOf(List<Map<String, dynamic>> tasks) {
-    final seen = <Object?>{};
-    return [
-      for (final t in tasks)
-        if (t['residentId'] != null && seen.add(t['residentId']))
-          {'id': t['residentId'], 'name': (t['residentCard'] as Map?)?['fullName'] ?? 'Người cao tuổi ${t['residentId']}'},
-    ];
-  }
+  Future<void> openHandover() => widget.links!.openHandover(context, widget.shiftId);
 
-  Future<void> report(int? residentId) async {
-    final saved = await widget.links!.reportIncident(context, residentId);
-    if (saved && mounted) await loadJourney();
-  }
-
-  Future<void> journeyAction(String key, List<Map<String, dynamic>> tasks) async {
-    final links = widget.links!;
-    switch (key) {
-      case 'previous' || 'handover':
-        await links.openHandover(context, widget.shiftId);
-        if (mounted) await loadJourney();
-      case 'plan':
-        await links.openPlans(context, residentsOf(tasks));
-      case 'incidents':
-        await report(null);
-    }
-  }
+  /// Kế hoạch chăm sóc của người cao tuổi của công việc (trước ở dải Tiến trình ca, nay ở khung chi tiết).
+  Future<void> openPlan(Map<String, dynamic> task) => widget.links!.openPlans(context, [
+    {
+      'id': task['residentId'],
+      'name': (task['residentCard'] as Map?)?['fullName'] ?? 'Người cao tuổi ${task['residentId']}',
+    },
+  ]);
 
   /// Trả `true` khi đã nhận việc để khung chi tiết đóng lại, checklist tải mới.
   Future<bool> claim(Map<String, dynamic> task) async {
@@ -326,6 +263,7 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
           onReport: widget.links != null && task['residentId'] != null
               ? () => report(task['residentId'] as int)
               : null,
+          onPlan: widget.links != null && task['residentId'] != null ? () => openPlan(task) : null,
         ),
       ),
     );
@@ -410,16 +348,6 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                     _Notice(icon: LucideIcons.circleAlert, text: error!, danger: true),
                     const SizedBox(height: 8),
                   ],
-                  if (widget.links != null && loaded != null)
-                    ShiftJourney(
-                      steps: buildShiftSteps(
-                        tasks: tasks,
-                        incidents: incidents,
-                        incidentsLoading: incidentsLoading,
-                        handover: handover,
-                      ),
-                      onAction: (key) => journeyAction(key, tasks),
-                    ),
                   if (loaded != null && tasks.isEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -472,13 +400,13 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                           _ChecklistRow(
                             icon: LucideIcons.arrowLeftRight,
                             title: 'Nhận bàn giao đầu ca',
-                            onTap: widget.links == null ? null : () => journeyAction('handover', tasks),
+                            onTap: widget.links == null ? null : openHandover,
                           ),
                         if (handoverTasks?['prepareAtEnd'] == true)
                           _ChecklistRow(
                             icon: LucideIcons.arrowLeftRight,
                             title: 'Lập bàn giao cuối ca',
-                            onTap: widget.links == null ? null : () => journeyAction('handover', tasks),
+                            onTap: widget.links == null ? null : openHandover,
                           ),
                       ],
                     ),
@@ -658,6 +586,7 @@ class _TaskDetail extends StatefulWidget {
     required this.onClaim,
     required this.onNotPerform,
     required this.onReport,
+    required this.onPlan,
   });
 
   final Map<String, dynamic> task;
@@ -669,6 +598,7 @@ class _TaskDetail extends StatefulWidget {
   final Future<bool> Function()? onClaim;
   final Future<bool> Function()? onNotPerform;
   final Future<void> Function()? onReport;
+  final Future<void> Function()? onPlan;
 
   @override
   State<_TaskDetail> createState() => _TaskDetailState();
@@ -736,6 +666,10 @@ class _TaskDetailState extends State<_TaskDetail> {
                 onPressed: busy ? null : () => run(notPerform),
                 child: const Text('Không thực hiện được…'),
               ),
+            ],
+            if (widget.onPlan case final plan?) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: plan, child: const Text('Xem kế hoạch chăm sóc')),
             ],
             if (widget.onReport case final report?) ...[
               const SizedBox(height: 8),

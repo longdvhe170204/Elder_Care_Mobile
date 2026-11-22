@@ -7,10 +7,10 @@ import 'package:mobile/common/offline/offline_database.dart';
 import 'package:mobile/common/offline/offline_queue.dart';
 import 'package:mobile/common/theme/app_theme.dart';
 import 'package:mobile/staff/care_tasks/care_checklist_cache.dart';
+import 'package:mobile/staff/care_tasks/care_checklist_links.dart';
 import 'package:mobile/staff/care_tasks/care_checklist_repository.dart';
 import 'package:mobile/staff/care_tasks/care_checklist_screen.dart';
 import 'package:mobile/staff/care_tasks/care_offline_recording.dart';
-import 'package:mobile/staff/care_tasks/shift_journey.dart';
 import '../../support/fake_backend.dart';
 import 'care_checklist_cache_test.dart' show FixtureChecklistGateway;
 
@@ -314,23 +314,17 @@ void main() {
     expect(find.text('Lập bàn giao cuối ca'), findsOneWidget);
   });
 
-  group('SRS_2_2 dải Tiến trình ca', () {
+  group('Lối đi từ Checklist ca', () {
     late List<String> opened;
-    ShiftJourneyLinks links({Future<List<Map<String, dynamic>>> Function()? incidents}) => ShiftJourneyLinks(
-      incidents:
-          incidents ??
-          () async => [
-            {'status': 'NEW', 'content': {'residentId': 77}},
-          ],
-      handover: (shiftId) async => {'status': 'PREPARED'},
+    CareChecklistLinks links() => CareChecklistLinks(
       openHandover: (context, shiftId) async => opened.add('handover:$shiftId'),
-      openPlans: (context, residents) async => opened.add('plans:${residents.map((r) => r['id']).join(',')}'),
+      openPlans: (context, residents) async => opened.add('plans:${residents.map((r) => '${r['id']} ${r['name']}').join(',')}'),
       reportIncident: (context, residentId) async {
         opened.add('incident:$residentId');
         return false;
       },
     );
-    Future<void> journey(WidgetTester tester, ShiftJourneyLinks l) async {
+    Future<void> withLinks(WidgetTester tester) async {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -338,7 +332,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light(),
-          home: CareChecklistScreen(repository: repository, accountId: 1, shiftId: 9, links: l),
+          home: CareChecklistScreen(repository: repository, accountId: 1, shiftId: 9, links: links()),
         ),
       );
       await tester.pumpAndSettle();
@@ -346,42 +340,33 @@ void main() {
 
     setUp(() => opened = []);
 
-    testWidgets('hien5Buoc_demCongViecVaSuCo', (tester) async {
-      await journey(tester, links());
-      expect(find.text('Tiến trình ca'), findsOneWidget);
-      expect(find.text('0/2 xong, 1 quá hạn'), findsOneWidget);
-      expect(find.text('1 sự cố đang mở'), findsOneWidget);
-      expect(find.text('Đã lập, còn 2 việc chưa xong'), findsOneWidget);
-    });
-
-    testWidgets('cacNutMoDungNoi', (tester) async {
-      await journey(tester, links());
-      await tester.tap(find.text('Mở bàn giao ca trước'));
-      await tester.tap(find.text('Xem kế hoạch'));
-      await tester.tap(find.text('Mở bàn giao'));
-      await tester.pumpAndSettle();
-      expect(opened, ['handover:9', 'plans:77', 'handover:9']);
-    });
-
-    testWidgets('baoSuCoTuTheCongViec_chonSanNguoiCaoTuoi', (tester) async {
-      await journey(tester, links());
-      await tester.tap(find.text('Báo sự cố'));
-      await tester.pumpAndSettle();
-      await open(tester, 'Việc đến hạn');
-      await tester.tap(find.text('Báo sự cố'));
-      await tester.pumpAndSettle();
-      expect(opened, ['incident:null', 'incident:77']);
-    });
-
-    testWidgets('khongTaiDuocSuCo_khongChanChecklist', (tester) async {
-      await journey(tester, links(incidents: () async => throw Exception('offline')));
-      expect(find.text('Chưa tải được'), findsOneWidget);
-      expect(find.text('Việc đến hạn'), findsOneWidget);
-    });
-
-    testWidgets('khongCoLinks_khongCoDaiTienTrinh', (tester) async {
-      await view(tester);
+    testWidgets('khongConDaiTienTrinhCa', (tester) async {
+      await withLinks(tester);
       expect(find.text('Tiến trình ca'), findsNothing);
+      expect(find.text('Báo sự cố'), findsNothing);
+    });
+
+    testWidgets('chiTietCongViec_xemKeHoachVaBaoSuCoCuaNguoiCaoTuoi', (tester) async {
+      await withLinks(tester);
+      await open(tester, 'Việc đến hạn');
+      await tester.tap(find.text('Xem kế hoạch chăm sóc'));
+      await tester.tap(find.text('Báo sự cố'));
+      await tester.pumpAndSettle();
+      expect(opened, ['plans:77 Người kiểm thử', 'incident:77']);
+    });
+
+    testWidgets('dongBanGiao_moManBanGiaoCuaCa', (tester) async {
+      gateway.body['handoverTasks'] = {'prepareAtEnd': true};
+      await withLinks(tester);
+      await tester.tap(find.text('Lập bàn giao cuối ca'));
+      await tester.pumpAndSettle();
+      expect(opened, ['handover:9']);
+    });
+
+    testWidgets('khongCoLinks_khongCoNutKeHoach', (tester) async {
+      await view(tester);
+      await open(tester, 'Việc đến hạn');
+      expect(find.text('Xem kế hoạch chăm sóc'), findsNothing);
     });
   });
 }

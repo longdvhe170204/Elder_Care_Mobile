@@ -144,7 +144,7 @@ void main() {
     expect(find.text('Chưa có ca đã công bố'), findsOneWidget);
   });
 
-  testWidgets('SRS_2_2_checklistTuManChamSoc_coTienTrinhCa_moKeHoachVaBaoSuCo', (tester) async {
+  testWidgets('checklistTuManChamSoc_chiTietMoKeHoachVaBaoSuCo', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
         {'function': 'TASK_CHECKLIST', 'operation': 'VIEW'},
@@ -176,10 +176,10 @@ void main() {
     await tester.tap(find.text('Xem checklist'));
     await tester.pumpAndSettle();
     expect(find.text('Ca đêm · 18:00–07:00 · 17/11'), findsOneWidget);
-    expect(find.text('Tiến trình ca'), findsOneWidget);
-    expect(find.text('0/1 xong'), findsOneWidget);
-    expect(find.text('Chưa lập, còn 1 việc chưa xong'), findsOneWidget);
-    await tester.tap(find.text('Xem kế hoạch'));
+    expect(find.text('Tiến trình ca'), findsNothing);
+    await tester.tap(find.text('Hỗ trợ uống nước'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Xem kế hoạch chăm sóc'));
     await tester.pumpAndSettle();
     expect(find.text('Kế hoạch chăm sóc'), findsOneWidget);
     expect(find.text('Người kiểm thử'), findsOneWidget);
