@@ -20,8 +20,20 @@ String resultTypeLabel(String type) => switch (type) {
   'ADMINISTERED' => 'Đã dùng',
   'REFUSED' => 'Từ chối',
   'NOT_ADMINISTERED' => 'Không thực hiện',
+  'POSTPONED' => 'Hoãn',
   _ => type,
 };
+
+/// Chỉ số đo trước khi dùng (BR-M07-26): mã danh mục chỉ số → (nhãn, đơn vị). Huyết áp nhập huyết áp tâm thu.
+const measurementLabels = <String, (String, String)>{
+  'BLOOD_PRESSURE': ('Huyết áp tâm thu', 'mmHg'),
+  'HEART_RATE': ('Mạch', 'nhịp/phút'),
+  'BLOOD_GLUCOSE': ('Đường huyết', 'mmol/L'),
+};
+
+/// Mã chỉ số phải đo trước khi dùng của một liều đã ghép (đơn yêu cầu).
+List<String> requiredMeasurementCodes(Map<String, dynamic> item) =>
+    ((item['prescription'] as Map)['requiredMeasurements'] as List? ?? const []).cast<String>();
 
 /// Liều ghi được trên app: Đến giờ, Trễ (DESIGN.md `dose-card`: Tạm dừng, Mang theo chỉ có chữ, không nút).
 bool doseRecordable(String? status) => status == 'DUE' || status == 'LATE';

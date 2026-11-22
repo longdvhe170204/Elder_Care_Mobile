@@ -20,6 +20,7 @@ import 'early_unlock/early_unlock_screen.dart';
 import 'handover/handover_cache.dart';
 import 'handover/handover_screen.dart';
 import 'incidents/incidents_screen.dart';
+import 'medication/family_medication_screen.dart';
 import 'medication/medication_round_cache.dart';
 import 'medication/medication_round_gateway.dart';
 import 'medication/medication_round_repository.dart';
@@ -239,6 +240,8 @@ class _StaffRootState extends State<StaffRoot> {
           accountId: widget.session.user!.accountId,
         ),
       ),
+    if (_canRunMedicationRound)
+      ('Thuốc gia đình gửi', LucideIcons.packageOpen, () => FamilyMedicationScreen(api: widget.session.api)),
     if (_can('MEDICATION_RECEIPT', 'CREATE'))
       ('Tiếp nhận thuốc', LucideIcons.packageCheck, () => SuppliedIntakeScreen(api: widget.session.api)),
     if (_can('ROOM_BED_CONFIGURATION', 'VIEW') || _readinessDuty)
