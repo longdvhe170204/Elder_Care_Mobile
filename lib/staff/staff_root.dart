@@ -15,7 +15,9 @@ import 'activities/trip_list_screen.dart';
 import 'alerts/alerts_screen.dart';
 import 'alerts/emergency_assist_screen.dart';
 import 'beds/beds_screen.dart';
+import 'care_tasks/care_api_gateways.dart';
 import 'care_tasks/care_tasks_home_screen.dart';
+import 'care_tasks/day_care_attendance_screen.dart';
 import 'early_unlock/early_unlock_screen.dart';
 import 'handover/handover_cache.dart';
 import 'handover/handover_screen.dart';
@@ -305,10 +307,16 @@ class _StaffRootState extends State<StaffRoot> {
           showChecklist: nav.primary == StaffPrimary.checklist || nav.primary == StaffPrimary.floorToday,
           showHandover: nav.showHandover,
           showSchedule: _grants.contains('SHIFT_SCHEDULE:VIEW'),
+          showDayCare: _grants.contains('DAY_CARE_ATTENDANCE:VIEW'),
           onSelectTab: selectTab,
           open: (name) => switch (name) {
             'incident' => RecordIncidentScreen(api: _session.api),
             'handover' => _handover(),
+            'dayCare' => DayCareAttendanceScreen(
+              gateway: ApiDayCareAttendanceGateway(_session.api),
+              // Ngày Việt Nam hôm nay, như lối vào cũ ở tab Checklist.
+              date: DateTime.now().toUtc().add(const Duration(hours: 7)).toIso8601String().substring(0, 10),
+            ),
             _ => _ScheduleAndRequests(
               api: _session.api,
               showRequests: _grants.contains('SHIFT_SWAP_REQUEST:VIEW'),
