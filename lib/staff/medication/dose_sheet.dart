@@ -9,8 +9,8 @@ import 'medication_round_gateway.dart';
 import 'medication_round_repository.dart';
 
 /// Khung xác nhận liều (DESIGN.md `dose-sheet`): họ tên, dị ứng; mỗi liều một khối Đã dùng / Từ chối / Không thực
-/// hiện; Đã dùng có thời điểm dùng (điền sẵn giờ hiện tại) và phản ứng; Từ chối, Không thực hiện bắt buộc lý do
-/// (FR-021). Một nút lưu, mỗi liều lưu riêng. Trả số liều đã lưu và số liều đưa vào hàng đợi.
+/// hiện / Hoãn; Đã dùng có thời điểm dùng (điền sẵn giờ hiện tại), chỉ số đo trước khi dùng nếu đơn yêu cầu và phản
+/// ứng; Từ chối, Không thực hiện, Hoãn bắt buộc lý do (FR-021, BR-M07-26). Nút Nhận liều giữ liều 15 phút. Một nút lưu, mỗi liều lưu riêng. Trả số liều đã lưu và số liều đưa vào hàng đợi.
 class DoseSheet extends StatefulWidget {
   const DoseSheet({
     super.key,
@@ -40,12 +40,17 @@ class DoseSheetResult {
 }
 
 class _Draft {
-  _Draft(DateTime now) : time = TextEditingController(text: formatDateTime(now));
+  _Draft(DateTime now, List<String> codes)
+    : time = TextEditingController(text: formatDateTime(now)),
+      measures = {for (final code in codes) code: TextEditingController()};
   DoseOutcome? outcome;
   final TextEditingController time;
   final TextEditingController reaction = TextEditingController();
   final TextEditingController reason = TextEditingController();
   final TextEditingController note = TextEditingController();
+  final Map<String, TextEditingController> measures;
+  String? measureError;
+  DateTime? claimUntil;
   bool afterDisconnect = false;
   bool saved = false;
   String? error;
@@ -55,14 +60,14 @@ class _Draft {
   String? key;
 
   void dispose() {
-    for (final c in [time, reaction, reason, note]) {
+    for (final c in [time, reaction, reason, note, ...measures.values]) {
       c.dispose();
     }
   }
 }
 
 class _DoseSheetState extends State<DoseSheet> {
-  late final List<_Draft> drafts = [for (final _ in widget.items) _Draft(widget.clock())];
+  late final List<_Draft> drafts = [for (final item in widget.items) _Draft(widget.clock(), requiredMeasurementCodes(item))];
   bool busy = false;
   int online = 0;
   int queued = 0;
@@ -78,6 +83,7 @@ class _DoseSheetState extends State<DoseSheet> {
   Map<String, dynamic>? _body(_Draft d) {
     d.timeError = null;
     d.reasonError = null;
+    d.measureError = null;
     final note = d.note.text.trim();
     if (d.outcome == DoseOutcome.administered) {
       final at = parseVnDateTime(d.time.text);
@@ -85,9 +91,20 @@ class _DoseSheetState extends State<DoseSheet> {
         d.timeError = 'Nhập theo dạng dd/MM/yyyy HH:mm.';
         return null;
       }
+      // BR-M07-26: đơn yêu cầu đo chỉ số trước khi dùng thì phải nhập đủ; hệ thống không quyết định dùng hay không theo chỉ số
+      final measurements = <Map<String, dynamic>>[];
+      for (final MapEntry(key: code, value: c) in d.measures.entries) {
+        final value = double.tryParse(c.text.trim().replaceAll(',', '.'));
+        if (value == null) {
+          d.measureError = 'Nhập chỉ số ${measurementLabels[code]?.$1 ?? code} đo trước khi dùng.';
+          return null;
+        }
+        measurements.add({'code': code, 'value': value});
+      }
       final reaction = d.reaction.text.trim();
       return {
         'administeredAt': vnIso(at),
+        if (measurements.isNotEmpty) 'measurements': measurements,
         'basis': 'REGULAR',
         if (reaction.isNotEmpty) 'adverseReaction': reaction,
         if (note.isNotEmpty) 'note': note,
@@ -100,6 +117,35 @@ class _DoseSheetState extends State<DoseSheet> {
       return null;
     }
     return {'reason': reason, if (note.isNotEmpty) 'note': note};
+  }
+
+  /// Nhận liều (BR-M07-26): giữ liều 15 phút để soạn thuốc; cần có mạng.
+  Future<void> claim(int i) async {
+    final d = drafts[i];
+    setState(() => d.error = null);
+    try {
+      final until = await widget.repository.claim(widget.items[i], widget.newKey());
+      d.claimUntil = until;
+    } on ApiProblem catch (problem) {
+      d.error = problem.detail;
+    } on ApiUnreachable {
+      d.error = 'Nhận liều cần có mạng.';
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> release(int i) async {
+    final d = drafts[i];
+    setState(() => d.error = null);
+    try {
+      await widget.repository.release(widget.items[i], widget.newKey());
+      d.claimUntil = null;
+    } on ApiProblem catch (problem) {
+      d.error = problem.detail;
+    } on ApiUnreachable {
+      d.error = 'Bỏ nhận cần có mạng.';
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> save() async {
@@ -172,7 +218,7 @@ class _DoseSheetState extends State<DoseSheet> {
             children: [
               Text(resident['fullName'] as String? ?? 'Người cao tuổi', style: theme.textTheme.titleLarge),
               if (allergies != null) ...[const SizedBox(height: 8), _AllergyNote(allergies.cast<String>())],
-              for (final (i, item) in widget.items.indexed) _block(context, item, drafts[i]),
+              for (final (i, item) in widget.items.indexed) _block(context, item, drafts[i], i),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: busy || drafts.every((d) => d.saved || d.outcome == null) ? null : save,
@@ -190,7 +236,7 @@ class _DoseSheetState extends State<DoseSheet> {
     );
   }
 
-  Widget _block(BuildContext context, Map<String, dynamic> item, _Draft d) {
+  Widget _block(BuildContext context, Map<String, dynamic> item, _Draft d, int index) {
     final theme = Theme.of(context);
     final dose = item['dose'] as Map;
     final windowTo = DateTime.parse(dose['windowTo'] as String);
@@ -218,7 +264,18 @@ class _DoseSheetState extends State<DoseSheet> {
                 style: theme.textTheme.bodySmall,
               ),
               if (instruction != null && instruction.isNotEmpty) Text(instruction, style: theme.textTheme.bodySmall),
-              ..._tags(dose, theme),
+              ..._tags(dose, item, theme),
+              if (!d.saved)
+                Row(
+                  children: [
+                    if (d.claimUntil == null)
+                      TextButton(onPressed: enabled ? () => claim(index) : null, child: const Text('Nhận liều'))
+                    else ...[
+                      Text('Bạn đã nhận liều đến ${formatTime(d.claimUntil!)}', style: theme.textTheme.bodySmall),
+                      TextButton(onPressed: enabled ? () => release(index) : null, child: const Text('Bỏ nhận')),
+                    ],
+                  ],
+                ),
               if (d.saved)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -247,9 +304,20 @@ class _DoseSheetState extends State<DoseSheet> {
                     decoration: InputDecoration(
                       labelText: 'Thời điểm dùng',
                       errorText: d.timeError,
-                      helperText: late ? 'Sau cửa sổ: ghi là dùng trễ' : null,
+                      helperText: late ? 'Sau cửa sổ: ghi là đã dùng muộn kèm giờ thực tế' : null,
                     ),
                   ),
+                  for (final MapEntry(key: code, value: c) in d.measures.entries)
+                    TextField(
+                      controller: c,
+                      enabled: enabled,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: '${measurementLabels[code]?.$1 ?? code} trước khi dùng (${measurementLabels[code]?.$2 ?? ''})',
+                      ),
+                    ),
+                  if (d.measureError != null)
+                    Text(d.measureError!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
                   TextField(
                     controller: d.reaction,
                     enabled: enabled,
@@ -265,7 +333,9 @@ class _DoseSheetState extends State<DoseSheet> {
                       contentPadding: EdgeInsets.zero,
                     ),
                 ],
-                if (d.outcome == DoseOutcome.refused || d.outcome == DoseOutcome.notAdministered)
+                if (d.outcome == DoseOutcome.refused ||
+                    d.outcome == DoseOutcome.notAdministered ||
+                    d.outcome == DoseOutcome.postponed)
                   TextField(
                     controller: d.reason,
                     enabled: enabled,
@@ -299,7 +369,10 @@ class _DoseSheetState extends State<DoseSheet> {
 }
 
 /// Nhãn nguồn và điều kiện của liều (DESIGN.md `dose-card`).
-List<Widget> _tags(Map<dynamic, dynamic> dose, ThemeData theme) => [
+List<Widget> _tags(Map<dynamic, dynamic> dose, Map<String, dynamic> item, ThemeData theme) => [
+  if ((item['prescription'] as Map)['timeCriticality'] == 'CRITICAL')
+    Text('Quan trọng về thời gian', style: theme.textTheme.bodySmall),
+  if (dose['postponed'] == true) Text('Đã hoãn: ${dose['postponedReason'] ?? ''}', style: theme.textTheme.bodySmall),
   Text(dose['medicationSource'] == 'FAMILY_SENT' ? 'Gia đình gửi' : 'Thuốc viện', style: theme.textTheme.bodySmall),
   if (dose['requiresOnline'] == true) Text('Kiểm soát đặc biệt, phải trực tuyến', style: theme.textTheme.bodySmall),
   if (dose['floorShared'] == true) Text('Liều chung của tầng', style: theme.textTheme.bodySmall),

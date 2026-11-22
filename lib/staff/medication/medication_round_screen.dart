@@ -10,6 +10,7 @@ import '../../common/widgets/page_body.dart';
 import '../../common/widgets/status_pill.dart';
 import 'dose_review_screen.dart';
 import 'dose_sheet.dart';
+import 'late_dose_dialog.dart';
 import 'medication_labels.dart';
 import 'medication_round_repository.dart';
 
@@ -107,6 +108,20 @@ class _MedicationRoundScreenState extends State<MedicationRoundScreen> {
         if (result.queued > 0) 'Đã ghi trên máy ${result.queued} liều, sẽ đồng bộ khi có mạng.',
       ].join(' ');
     });
+    await load();
+  }
+
+  /// Liều Bỏ lỡ: ghi "đã dùng muộn" bằng bản đính chính (Q-327, BR-M07-26).
+  Future<void> lateDose(Map<String, dynamic> item) async {
+    final message = await showLateDoseDialog(
+      context,
+      repository: widget.repository,
+      item: item,
+      newKey: widget.newKey,
+      clock: widget.clock,
+    );
+    if (message == null || !mounted) return;
+    setState(() => this.message = message);
     await load();
   }
 
@@ -246,6 +261,11 @@ class _MedicationRoundScreenState extends State<MedicationRoundScreen> {
                       ),
                       if ((item['dose'] as Map)['requiresOnline'] == true)
                         Text('Kiểm soát đặc biệt, phải trực tuyến', style: theme.textTheme.bodySmall),
+                      if (MedicationRoundRepository.lateResultId(item) != null)
+                        TextButton(
+                          onPressed: busy ? null : () => lateDose(item),
+                          child: const Text('Ghi đã dùng muộn'),
+                        ),
                       if (queued[(item['dose'] as Map)['doseKey']] case final type?)
                         StatusPill(label: 'Chưa đồng bộ: ${resultTypeLabel(type)}', tone: StatusTone.neutral),
                     ],

@@ -23,6 +23,7 @@ import 'handover/handover_cache.dart';
 import 'handover/handover_screen.dart';
 import 'incidents/incidents_screen.dart';
 import 'incidents/record_incident_screen.dart';
+import 'medication/family_medication_screen.dart';
 import 'medication/medication_round_cache.dart';
 import 'medication/medication_round_gateway.dart';
 import 'medication/medication_round_repository.dart';
@@ -214,6 +215,12 @@ class _StaffRootState extends State<StaffRoot> {
         'Thuốc viện cung cấp',
         LucideIcons.packageCheck,
         () => SuppliedIntakeScreen(api: api),
+      ),
+      StaffFeature.familyMedication => (
+        'Thuốc gia đình gửi',
+        'Lô thuốc gia đình gửi',
+        LucideIcons.packageOpen,
+        () => FamilyMedicationScreen(api: api),
       ),
       StaffFeature.incidents => ('Sự cố', 'Danh sách sự cố', LucideIcons.siren, () => IncidentsScreen(api: api)),
       StaffFeature.alerts => ('Cảnh báo', 'Cảnh báo cần xử lý', LucideIcons.bellRing, () => AlertsScreen(api: api)),

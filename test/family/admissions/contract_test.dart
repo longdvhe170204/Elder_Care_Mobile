@@ -55,6 +55,23 @@ void main() {
     expect(find.textContaining('Thu cọc'), findsNothing);
   });
 
+  testWidgets('FR_043d_phuLucChoKy_hienSoPhuLucVaTrangThai', (tester) async {
+    final backend = FakeBackend()
+      ..on('GET', '/contracts', 200, [contract()])
+      ..on('GET', '/contracts/31/deposit', 200, {'status': 'SATISFIED'})
+      ..on('GET', '/contracts/31/addenda', 200, [
+        {'id': 2, 'addendumNo': 2, 'effectiveDate': '2026-12-01', 'status': 'PENDING_SIGNATURE'},
+        {'id': 1, 'addendumNo': 1, 'effectiveDate': '2026-11-15', 'status': 'CANCELLED'},
+      ]);
+    await pumpScreen(tester, backend);
+
+    await tester.tap(find.text('Xem phụ lục, đặt cọc'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Phụ lục số 02, hiệu lực 01/12/2026, Chờ ký'), findsOneWidget);
+    expect(find.text('Phụ lục số 01, hiệu lực 15/11/2026, Đã hủy'), findsOneWidget);
+  });
+
   testWidgets('FR_028_chuaCoHopDong_bao', (tester) async {
     final backend = FakeBackend()..on('GET', '/contracts', 200, <dynamic>[]);
     await pumpScreen(tester, backend);

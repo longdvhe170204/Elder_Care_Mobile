@@ -111,6 +111,8 @@ class MedicationRoundRepository {
         'dosage': prescription['dosage'],
         'route': prescription['route'],
         'instructionNote': prescription['instructionNote'],
+        'timeCriticality': prescription['timeCriticality'],
+        'requiredMeasurements': prescription['requiredMeasurements'],
       },
       'resident': {
         'fullName': (resident?['personalInfo'] as Map?)?['fullName'],
@@ -126,6 +128,22 @@ class MedicationRoundRepository {
     };
   }
 
+  /// Liều Bỏ lỡ ghi được "đã dùng muộn": kết quả đã có mã (api-006 `Dose.result.id`).
+  static int? lateResultId(Map<String, dynamic> item) {
+    final dose = item['dose'] as Map;
+    if (dose['status'] != 'MISSED') return null;
+    return (dose['result'] as Map?)?['id'] as int?;
+  }
+
+  Future<void> correctLate(Map<String, dynamic> item, DateTime at, String reason, String key) =>
+      gateway.correctLate(lateResultId(item)!, at, reason, key);
+
+  Future<DateTime?> claim(Map<String, dynamic> item, String key) =>
+      gateway.claim((item['dose'] as Map)['doseKey'] as String, key);
+
+  Future<void> release(Map<String, dynamic> item, String key) =>
+      gateway.release((item['dose'] as Map)['doseKey'] as String, key);
+
   /// Ghi kết quả liều: có mạng thì gọi lệnh trực tuyến; mất mạng thì đưa vào hàng đợi `M07.DOSE_RESULT` (kết quả
   /// đồng bộ từng bản ghi ở màn Đồng bộ của common, BR-M15-20); liều kiểm soát đặc biệt mất mạng thì [RequiresOnline].
   Future<RecordSaved> record({
@@ -140,6 +158,8 @@ class MedicationRoundRepository {
       await gateway.record(dose['doseKey'] as String, outcome, body, key);
       return RecordSaved.online;
     } on ApiUnreachable {
+      // Hoãn có chủ đích chỉ ghi khi có mạng (BR-M07-26): không đưa vào hàng đợi
+      if (outcome == DoseOutcome.postponed) rethrow;
       if (dose['requiresOnline'] == true) throw RequiresOnline();
       await queue.enqueue(
         accountId: accountId,
@@ -152,6 +172,7 @@ class MedicationRoundRepository {
           'reason': ?body['reason'],
           'adverseReaction': ?body['adverseReaction'],
           'note': ?body['note'],
+          'measurements': ?body['measurements'],
         },
       );
       return RecordSaved.queued;

@@ -330,7 +330,7 @@ class FamilyMoreTab extends StatelessWidget {
             _row(
               LucideIcons.arrowLeftRight,
               'Yêu cầu thay đổi dịch vụ',
-              () => _push(context, 'Yêu cầu thay đổi dịch vụ', ChangeRequestScreen(api: api)),
+              () => _push(context, 'Yêu cầu thay đổi dịch vụ', ChangeRequestScreen(api: api, residentId: resident.id)),
             ),
             _row(LucideIcons.fileText, 'Hợp đồng', () => _push(context, 'Hợp đồng', ContractScreen(api: api))),
           ]),

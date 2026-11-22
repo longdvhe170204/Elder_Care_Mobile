@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../../common/api/api_client.dart';
-import '../../../common/api/problem_message.dart';
+import '../../common/api/api_client.dart';
+import '../../common/api/problem_message.dart';
 
 /// FR-023a: chỉ các đề nghị backend cho người đại diện hiện hành được trả về.
 class PurchaseConsentScreen extends StatefulWidget {

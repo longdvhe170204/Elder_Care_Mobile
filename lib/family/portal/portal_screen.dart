@@ -6,6 +6,9 @@ import '../../common/api/problem_message.dart';
 import '../../common/residents/resident_avatar.dart';
 import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/status_pill.dart';
+import '../admissions/change_confirmation_screen.dart';
+import '../admissions/change_request_history_screen.dart';
+import '../admissions/change_request_screen.dart';
 import '../balance/family_balance_screen.dart';
 import '../belongings/family_belongings_screen.dart';
 import '../charges/family_costs_screen.dart';
@@ -282,6 +285,45 @@ class _ResidentPortalScreenState extends State<ResidentPortalScreen> {
                       ),
                     ),
                     child: const Text('Đề nghị mua hộ'),
+                  ),
+                  // 004 FR-039: người đại diện gửi yêu cầu thay đổi lưu trú, Hành chính hoàn thiện và gửi duyệt
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Điều chỉnh hợp đồng')),
+                          body: ChangeRequestScreen(api: widget.api, residentId: _residentId),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Đề nghị điều chỉnh hợp đồng'),
+                  ),
+                  // 004 FR-043c: viện gửi yêu cầu thay đổi lưu trú để người đại diện xác nhận
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Điều chỉnh chờ xác nhận')),
+                          body: ChangeConfirmationList(api: widget.api, residentId: _residentId),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Điều chỉnh hợp đồng chờ xác nhận'),
+                  ),
+                  // 004 FR-039: lịch sử yêu cầu thay đổi lưu trú người đại diện đã gửi
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('Đề nghị đã gửi')),
+                          body: ChangeRequestHistory(api: widget.api, residentId: _residentId),
+                        ),
+                      ),
+                    ),
+                    child: const Text('Đề nghị điều chỉnh đã gửi'),
                   ),
                 ],
                 if (_belongings) ...[
