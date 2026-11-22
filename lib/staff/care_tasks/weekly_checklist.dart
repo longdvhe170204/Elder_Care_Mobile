@@ -5,7 +5,6 @@ import '../../common/api/api_client.dart';
 import '../../common/format/date_time.dart';
 import '../../common/theme/app_theme.dart';
 import 'care_checklist_repository.dart';
-import 'care_checklist_screen.dart' show Initials, careGroupKey, openTaskStatuses;
 
 const _weekdayShort = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const _weekdayLong = ['Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy', 'Chủ nhật'];
@@ -36,16 +35,16 @@ String shiftLabel(Map<String, dynamic> shift) {
   return '${shiftName(shift)} · ${_dmPadded(_vn(start))} · ${formatTime(start)}–${formatTime(end)}';
 }
 
-/// Tab Checklist theo tuần (Figma "Prototype · Mobile" 98:1671 "Checklist ca · Lịch tuần", 105:1024 "Checklist ca · Theo
-/// người cao tuổi"): đổi tuần, chọn ngày; mỗi ca bắt đầu trong ngày có đầu nhóm ca rồi danh sách người cao tuổi có việc
-/// trong ca (số việc còn lại, số quá hạn). Bấm một người mở "Việc chăm sóc" của người đó ([openResident]).
+/// Tab Checklist theo tuần (Figma "Prototype · Mobile" 98:1671 "Checklist ca · Lịch tuần"): đổi tuần, chọn ngày; mỗi ca
+/// bắt đầu trong ngày có đầu nhóm ca rồi bảng "Giờ | Công việc" liệt kê thẳng công việc của ca theo giờ (tên việc, người
+/// cao tuổi · phòng, trạng thái). Bấm một dòng mở chi tiết công việc đó ([openTask]) để ghi nhận.
 class WeeklyChecklist extends StatefulWidget {
   const WeeklyChecklist({
     super.key,
     required this.shifts,
     required this.repository,
     required this.accountId,
-    required this.openResident,
+    required this.openTask,
     this.clock = DateTime.now,
   });
 
@@ -53,7 +52,7 @@ class WeeklyChecklist extends StatefulWidget {
   final Future<List<Map<String, dynamic>>> Function(DateTime from, DateTime to) shifts;
   final CareChecklistRepository repository;
   final int accountId;
-  final Future<void> Function(Map<String, dynamic> shift, String residentKey) openResident;
+  final Future<void> Function(Map<String, dynamic> shift, Map<String, dynamic> task) openTask;
   final DateTime Function() clock;
 
   @override
@@ -145,8 +144,8 @@ class _WeeklyChecklistState extends State<WeeklyChecklist> {
     ]);
   }
 
-  Future<void> open(Map<String, dynamic> shift, String key) async {
-    await widget.openResident(shift, key);
+  Future<void> open(Map<String, dynamic> shift, Map<String, dynamic> task) async {
+    await widget.openTask(shift, task);
     if (mounted) await selectDay(selectedDay);
   }
 
@@ -166,15 +165,10 @@ class _WeeklyChecklistState extends State<WeeklyChecklist> {
             onDay: selectDay,
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            padding: const EdgeInsets.fromLTRB(20, 13, 20, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _Heading(
-                  text: '${_weekdayLong[selectedDay.weekday - 1]}, ${_dm(selectedDay)}',
-                  trailing: selectedDay == today ? const _TodayChip() : null,
-                ),
-                const SizedBox(height: 12),
                 if (shiftError != null)
                   Text(shiftError!, style: theme.textTheme.bodyMedium)
                 else if (weekShifts == null)
@@ -186,14 +180,14 @@ class _WeeklyChecklistState extends State<WeeklyChecklist> {
                   const _EmptyBox(
                     icon: LucideIcons.calendar,
                     title: 'Chưa có ca đã công bố',
-                    body: 'Chọn ngày khác để xem lịch và công việc.',
+                    body: 'Chọn ngày khác trên lịch để xem công việc.',
                   )
                 else
                   for (final shift in shiftsOn(selectedDay)) ...[
                     _ShiftHeader(shift: shift),
-                    const SizedBox(height: 8),
-                    ..._residents(context, shift),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 7),
+                    ..._tasks(context, shift),
+                    const SizedBox(height: 13),
                   ],
               ],
             ),
@@ -203,8 +197,8 @@ class _WeeklyChecklistState extends State<WeeklyChecklist> {
     );
   }
 
-  /// Dòng người cao tuổi của một ca, theo giờ việc sớm nhất; ca chưa có việc thì một dòng báo.
-  List<Widget> _residents(BuildContext context, Map<String, dynamic> shift) {
+  /// Bảng công việc của một ca theo giờ dự kiến (Figma "Công việc theo giờ"); ca chưa có việc thì một dòng báo.
+  List<Widget> _tasks(BuildContext context, Map<String, dynamic> shift) {
     final theme = Theme.of(context);
     final result = checklists[shift['id']];
     if (result == null) {
@@ -220,11 +214,8 @@ class _WeeklyChecklistState extends State<WeeklyChecklist> {
     final tasks =
         (load.snapshot.content['tasks'] as List? ?? []).map((t) => Map<String, dynamic>.from(t as Map)).toList()
           ..sort((a, b) => (a['plannedAt'] as String? ?? '').compareTo(b['plannedAt'] as String? ?? ''));
-    if (tasks.isEmpty) return const [_NoteBox(text: 'Chưa có danh sách người cao tuổi cho ca này.')];
-    final groups = <String, List<Map<String, dynamic>>>{};
-    for (final t in tasks) {
-      groups.putIfAbsent(careGroupKey(t), () => []).add(t);
-    }
+    if (tasks.isEmpty) return const [_NoteBox(text: 'Chưa có công việc trong ca này.')];
+    final pending = widget.repository.pendingTaskIds;
     return [
       if (load.offline)
         Padding(
@@ -234,10 +225,15 @@ class _WeeklyChecklistState extends State<WeeklyChecklist> {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ),
-      for (final MapEntry(:key, :value) in groups.entries) ...[
-        _ResidentRow(tasks: value, onTap: () => open(shift, key)),
-        const SizedBox(height: 8),
-      ],
+      _Table(
+        children: [
+          const _TableHead(),
+          for (final task in tasks) ...[
+            const Divider(height: 1, thickness: 1),
+            _TaskRow(task: task, pending: pending.contains(task['id']), onTap: () => open(shift, task)),
+          ],
+        ],
+      ),
     ];
   }
 }
@@ -381,54 +377,6 @@ class _DayCell extends StatelessWidget {
   }
 }
 
-/// Tiêu đề khối 19 đậm (Figma "Chủ nhật, 22/11", "Việc trong ca ngày"), phần bên phải tùy chọn.
-class _Heading extends StatelessWidget {
-  const _Heading({required this.text, this.trailing});
-
-  final String text;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) => ConstrainedBox(
-    constraints: const BoxConstraints(minHeight: 32),
-    child: Row(
-      children: [
-        Expanded(
-          child: Semantics(
-            header: true,
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 19, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
-        ?trailing,
-      ],
-    ),
-  );
-}
-
-class _TodayChip extends StatelessWidget {
-  const _TodayChip();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(AppRadius.lg)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        child: Text(
-          'Hôm nay',
-          style: Theme.of(
-            context,
-          ).textTheme.labelMedium?.copyWith(color: scheme.secondary, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
-  }
-}
-
 /// Khung trắng bo 12 viền mảnh chứa bảng (Figma "Ca làm việc", "Công việc theo giờ").
 class _Table extends StatelessWidget {
   const _Table({required this.children});
@@ -529,11 +477,41 @@ class _ShiftHeader extends StatelessWidget {
   }
 }
 
-/// Dòng người cao tuổi (Figma "Dòng người cao tuổi"): chữ viết tắt, họ tên, phòng, số việc còn lại và số quá hạn.
-class _ResidentRow extends StatelessWidget {
-  const _ResidentRow({required this.tasks, required this.onTap});
+/// Đầu bảng nền xám nhạt (Figma "Cột Giờ và Công việc"): cột Giờ rộng 64, vạch dọc, cột Công việc.
+class _TableHead extends StatelessWidget {
+  const _TableHead();
 
-  final List<Map<String, dynamic>> tasks;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final style = theme.textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600);
+    return ExcludeSemantics(
+      child: ColoredBox(
+        color: scheme.surfaceContainerHighest,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 28),
+          child: Row(
+            children: [
+              SizedBox(width: 64, child: Center(child: Text('Giờ', style: style))),
+              Container(width: 1, height: 16, color: scheme.outlineVariant),
+              const SizedBox(width: 9),
+              Text('Công việc', style: style),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dòng công việc theo giờ (Figma "Checklist / Dòng theo giờ · Thông thường", "· Quá hạn"): giờ dự kiến (đỏ khi quá
+/// hạn), vạch dọc, tên việc, người cao tuổi · phòng, nhãn trạng thái, mũi tên.
+class _TaskRow extends StatelessWidget {
+  const _TaskRow({required this.task, required this.pending, required this.onTap});
+
+  final Map<String, dynamic> task;
+  final bool pending;
   final VoidCallback onTap;
 
   @override
@@ -541,56 +519,77 @@ class _ResidentRow extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final text = theme.textTheme;
-    final first = tasks.first;
-    final card = first['residentCard'] as Map?;
-    final name = card?['fullName'] as String? ?? first['location'] as String? ?? 'Công việc tầng/khu';
-    final remaining = tasks.where((t) => openTaskStatuses.contains(t['status'])).length;
-    final overdue = tasks.where((t) => t['status'] == 'OVERDUE').length;
+    final status = task['status'] as String?;
+    final overdue = status == 'OVERDUE';
+    final card = task['residentCard'] as Map?;
+    final who = [
+      card?['fullName'] as String? ?? task['location'] as String? ?? 'Công việc tầng/khu',
+      if (card?['roomBed'] case final String room) room,
+    ].join(' · ');
+    final (label, fill, ink) = switch (status) {
+      'OVERDUE' => ('Quá hạn', scheme.errorContainer, scheme.error),
+      'DUE' => ('Đến giờ', scheme.surfaceContainerHighest, scheme.secondary),
+      'NOT_YET_DUE' => ('Sắp tới', scheme.surfaceContainerHighest, scheme.secondary),
+      _ => (_doneStatus[status] ?? status ?? '', scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
+    };
     return Material(
       color: scheme.surface,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        side: BorderSide(color: scheme.outlineVariant),
-      ),
       child: InkWell(
         onTap: onTap,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 84),
+          constraints: const BoxConstraints(minHeight: 77),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.only(right: 11),
             child: Row(
               children: [
-                Initials(name: name, size: 44),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: text.titleMedium?.copyWith(fontSize: 17, fontWeight: FontWeight.w700)),
-                      if (card?['roomBed'] case final String room)
-                        Text(
-                          room,
-                          style: text.labelLarge?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w400),
-                        ),
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 10,
-                        children: [
-                          Text(
-                            remaining == 0 ? 'Đã xong ${tasks.length} việc' : '$remaining việc còn lại',
-                            style: text.labelLarge,
-                          ),
-                          if (overdue > 0)
-                            Text(
-                              '$overdue quá hạn',
-                              style: text.labelMedium?.copyWith(color: scheme.error, fontWeight: FontWeight.w600),
-                            ),
-                        ],
+                SizedBox(
+                  width: 64,
+                  child: Center(
+                    child: Text(
+                      switch (task['plannedAt']) {
+                        final String at => formatTime(DateTime.parse(at)),
+                        _ => '—',
+                      },
+                      style: text.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: overdue ? scheme.error : scheme.onSurface,
                       ),
-                    ],
+                    ),
                   ),
                 ),
+                Container(width: 1, height: 48, color: scheme.outlineVariant),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task['taskType'] as String? ?? '',
+                          style: text.bodyLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(who, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 2,
+                          children: [
+                            _Tag(label: label, fill: fill, ink: ink),
+                            if (pending)
+                              _Tag(
+                                label: 'Chưa đồng bộ',
+                                fill: scheme.surfaceContainerHighest,
+                                ink: scheme.onSurfaceVariant,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 9),
                 Icon(LucideIcons.chevronRight, size: 18, color: scheme.onSurfaceVariant),
               ],
             ),
@@ -599,6 +598,34 @@ class _ResidentRow extends StatelessWidget {
       ),
     );
   }
+}
+
+const _doneStatus = {
+  'COMPLETED': 'Hoàn thành',
+  'COMPLETED_LATE': 'Hoàn thành trễ',
+  'NOT_PERFORMED': 'Không thực hiện',
+  'CANCELLED': 'Hủy',
+};
+
+/// Nhãn trạng thái nhỏ bo 7 (Figma "Nhãn trạng thái").
+class _Tag extends StatelessWidget {
+  const _Tag({required this.label, required this.fill, required this.ink});
+
+  final String label;
+  final Color fill;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(AppRadius.menu)),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: ink, fontWeight: FontWeight.w600),
+      ),
+    ),
+  );
 }
 
 /// Khối trắng một dòng chữ xám (Figma "Ca chưa có danh sách").
