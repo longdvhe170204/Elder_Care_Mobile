@@ -30,6 +30,15 @@ void main() {
     expect(step(steps, 'handover').summary, 'Chưa lập, còn 2 việc chưa xong');
   });
 
+  test('Q-417: hết việc mà chưa lập bàn giao thì ghi rõ chỉ bắt buộc khi còn việc, cảnh báo', () {
+    final steps = buildShiftSteps(
+      tasks: [task('COMPLETED')],
+      incidents: const [],
+      handover: const ShiftHandover.none(),
+    );
+    expect(step(steps, 'handover').summary, 'Chưa lập, chỉ bắt buộc khi ca còn việc hoặc cảnh báo mở');
+  });
+
   test('sự cố đang mở của người cao tuổi trong ca', () {
     final steps = buildShiftSteps(
       tasks: [task('DUE')],

@@ -85,7 +85,12 @@ List<ShiftStep> buildShiftSteps({
       'handover',
       'Bàn giao cho ca sau',
       work.state == ShiftStepState.done ? ShiftStepState.current : ShiftStepState.pending,
-      remaining > 0 ? '$label, còn $remaining việc chưa xong' : label,
+      remaining > 0
+          ? '$label, còn $remaining việc chưa xong'
+          // Q-417: bàn giao chỉ bắt buộc khi phạm vi ca còn việc chưa đóng hoặc cảnh báo đang mở.
+          : status == null
+          ? 'Chưa lập, chỉ bắt buộc khi ca còn việc hoặc cảnh báo mở'
+          : label,
     );
   }
 
