@@ -62,9 +62,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Điểm danh bán trú'), findsOneWidget);
+    // Tab Checklist không còn "Việc chăm sóc khác"; Điểm danh bán trú ở tab Ca của tôi (chủ dự án 2026-11-22).
+    expect(find.text('Bạn không có quyền mở Checklist ca.'), findsOneWidget);
+    expect(find.text('Điểm danh bán trú'), findsNothing);
     expect(find.text('Lập công việc của ca'), findsNothing);
-    expect(find.text('Checklist ca'), findsNothing);
   });
   Future<void> home(WidgetTester tester, FakeBackend backend, CareChecklistCache cache, DateTime now) async {
     tester.view.physicalSize = const Size(800, 2400);
@@ -81,6 +82,22 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('checklistTuan_khongConViecChamSocKhac', (tester) async {
+    final backend = FakeBackend()
+      ..on('GET', '/me/permissions', 200, [
+        {'function': 'TASK_CHECKLIST', 'operation': 'VIEW'},
+        {'function': 'TASK_CHECKLIST', 'operation': 'CREATE'},
+        {'function': 'SHIFT_TASK_PLANNING', 'operation': 'VIEW'},
+        {'function': 'DAY_CARE_ATTENDANCE', 'operation': 'VIEW'},
+      ])
+      ..on('GET', '/me/shifts', 200, <dynamic>[]);
+    final cache = CareChecklistCache(NativeDatabase.memory());
+    addTearDown(cache.close);
+    await home(tester, backend, cache, DateTime.utc(2026, 11, 22, 1));
+    expect(find.text('Chưa có ca đã công bố'), findsOneWidget);
+    expect(find.text('Việc chăm sóc khác'), findsNothing);
+  });
 
   testWidgets('Figma_98_1671_tuanTruocTrong_baoChuaCoCa', (tester) async {
     final backend = FakeBackend()

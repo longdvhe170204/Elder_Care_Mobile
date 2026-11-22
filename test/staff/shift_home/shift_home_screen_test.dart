@@ -33,7 +33,7 @@ void main() {
     opened = [];
   });
 
-  Future<void> pump(WidgetTester tester, {bool showSchedule = true}) async {
+  Future<void> pump(WidgetTester tester, {bool showSchedule = true, bool showDayCare = false}) async {
     Widget page(String name) => Text('màn $name');
     await tester.pumpWidget(
       MaterialApp(
@@ -44,6 +44,7 @@ void main() {
             showChecklist: true,
             showHandover: true,
             showSchedule: showSchedule,
+            showDayCare: showDayCare,
             onSelectTab: selected.add,
             open: (name) {
               opened.add(name);
@@ -107,5 +108,20 @@ void main() {
   testWidgets('FR_054_khongQuyenXemLich_khongCoLichCa', (tester) async {
     await pump(tester, showSchedule: false);
     expect(find.text('Lịch ca và đơn'), findsNothing);
+  });
+
+  testWidgets('FR_012_coQuyenDiemDanh_hienMucBanTru_moDiemDanh', (tester) async {
+    await pump(tester, showDayCare: true);
+    await tester.scrollUntilVisible(find.text('Điểm danh bán trú'), 200);
+    expect(find.text('Bán trú hôm nay'), findsOneWidget);
+    await tester.tap(find.text('Điểm danh bán trú'));
+    await tester.pumpAndSettle();
+    expect(opened, ['dayCare']);
+  });
+
+  testWidgets('FR_012_khongQuyenDiemDanh_khongCoMucBanTru', (tester) async {
+    await pump(tester);
+    expect(find.text('Bán trú hôm nay'), findsNothing);
+    expect(find.text('Điểm danh bán trú'), findsNothing);
   });
 }

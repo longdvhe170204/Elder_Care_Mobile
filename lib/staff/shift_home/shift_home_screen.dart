@@ -10,8 +10,9 @@ const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ S�
 
 /// Tab "Ca của tôi" (Figma "03 · App nhân viên" node 5:5; spec 2026-11-20 điều hướng theo vai trò mục 5.1): thẻ ca hiện
 /// tại hoặc ca tiếp theo (`GET /me/shifts`), "Cần làm ngay" có số cảnh báo khẩn cấp chưa xác nhận và nút Báo sự cố,
-/// "Công việc trong ca" mở Checklist ca (tab 2), Bàn giao ca, Lịch ca và đơn. [open] dựng màn theo tên: `incident`,
-/// `handover`, `schedule`.
+/// "Công việc trong ca" mở Checklist ca (tab 2), Bàn giao ca, Lịch ca và đơn; "Bán trú hôm nay" mở Điểm danh bán trú
+/// (chuyển từ tab Checklist, chủ dự án 2026-11-22). [open] dựng màn theo tên: `incident`, `handover`, `schedule`,
+/// `dayCare`.
 class ShiftHomeScreen extends StatefulWidget {
   const ShiftHomeScreen({
     super.key,
@@ -21,12 +22,16 @@ class ShiftHomeScreen extends StatefulWidget {
     required this.showSchedule,
     required this.onSelectTab,
     required this.open,
+    this.showDayCare = false,
     this.clock = DateTime.now,
   });
 
   final ApiClient api;
   final bool showChecklist;
   final bool showHandover;
+
+  /// Có quyền điểm danh bán trú (`DAY_CARE_ATTENDANCE:VIEW`, 005 FR-012).
+  final bool showDayCare;
 
   /// Có quyền xem lịch ca (`SHIFT_SCHEDULE:VIEW`, 008 FR-054).
   final bool showSchedule;
@@ -161,6 +166,21 @@ class _ShiftHomeScreenState extends State<ShiftHomeScreen> {
                 ),
             ],
           ),
+          if (widget.showDayCare) ...[
+            const SizedBox(height: 24),
+            Text('Bán trú hôm nay', style: text.titleMedium),
+            const SizedBox(height: 8),
+            _Group(
+              rows: [
+                _Row(
+                  icon: LucideIcons.userCheck,
+                  title: 'Điểm danh bán trú',
+                  subtitle: 'Điểm danh đến, về của người bán trú',
+                  onTap: () => _push('dayCare', 'Điểm danh bán trú'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
