@@ -42,6 +42,7 @@ class CareChecklistScreen extends StatefulWidget {
     this.medication,
     this.alertsApi,
     this.shiftLabel,
+    this.initialTaskId,
   });
   final CareChecklistRepository repository;
 
@@ -57,6 +58,9 @@ class CareChecklistScreen extends StatefulWidget {
 
   /// Dòng ca dưới tiêu đề (Figma "Ca sáng · Tầng 2 · 07:00–15:00"), lấy từ ca đã chọn; checklist không trả thông tin ca.
   final String? shiftLabel;
+
+  /// Mở sẵn khung chi tiết của việc này sau lần tải đầu (bấm một việc ở Checklist theo tuần).
+  final int? initialTaskId;
   @override
   State<CareChecklistScreen> createState() => _CareChecklistScreenState();
 }
@@ -98,7 +102,10 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     unawaited(loadJourney());
     try {
       final next = await widget.repository.load(accountId, shiftId);
-      if (mounted && generation == token) setState(() => loaded = next);
+      if (mounted && generation == token) {
+        setState(() => loaded = next);
+        openInitialTask();
+      }
     } catch (e) {
       if (mounted && generation == token) {
         setState(() {
@@ -109,6 +116,18 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     } finally {
       if (mounted && generation == token) setState(() => busy = false);
     }
+  }
+
+  bool _openedInitial = false;
+
+  void openInitialTask() {
+    if (_openedInitial || widget.initialTaskId == null) return;
+    _openedInitial = true;
+    final task = (loaded!.snapshot.content['tasks'] as List? ?? [])
+        .map((t) => Map<String, dynamic>.from(t as Map))
+        .where((t) => t['id'] == widget.initialTaskId)
+        .firstOrNull;
+    if (task != null) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? openTask(task) : null);
   }
 
   /// Mở "Đối chiếu liều thuốc" (Figma 5:290) cho liều [doseKey] bằng khung ghi liều của vòng phát thuốc (006); liều
