@@ -7,6 +7,7 @@ import '../../common/format/date_time.dart';
 import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/page_body.dart';
 import '../../common/widgets/status_pill.dart';
+import '../alerts/alert_labels.dart';
 import '../medication/dose_sheet.dart';
 import '../medication/medication_labels.dart';
 import '../medication/medication_round_repository.dart';
@@ -329,6 +330,8 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                           Text(task['taskType'] as String? ?? '', style: Theme.of(context).textTheme.titleMedium),
                           if (widget.repository.pendingTaskIds.contains(task['id'])) const Text('Chưa đồng bộ'),
                           CareTaskContext(task: task),
+                          if (followingLabel(data?['openAlerts'] as List?, task['residentId']) case final label?)
+                            Text(label, style: Theme.of(context).textTheme.bodyMedium),
                           if (task['awaitingRemeasurementConfirmation'] == true) const Text('Chờ xác nhận đo lại'),
                           if ((loaded?.offline == false || widget.repository.recorder != null) &&
                               (task['allowedCommands'] as List? ?? []).contains('record'))
