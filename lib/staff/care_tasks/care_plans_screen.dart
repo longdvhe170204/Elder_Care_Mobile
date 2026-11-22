@@ -5,7 +5,7 @@ import '../../common/api/problem_message.dart';
 import '../../common/format/date_time.dart';
 
 // Kế hoạch chăm sóc của người cao tuổi trong ca (luồng 2.2 SRS, bước "Xem kế hoạch chăm sóc"): chỉ xem phiên bản Đang
-// hiệu lực (GET /residents/{id}/care-plans). Bác sĩ lập, ban hành kế hoạch trên web (Q-414, không còn duyệt). Chạm từng người mới tải.
+// hiệu lực (GET /residents/{id}/care-plans). Lập, sửa, duyệt kế hoạch làm trên web. Chạm từng người mới tải.
 
 const _roles = {
   'CAREGIVER': 'Nhân viên chăm sóc',
