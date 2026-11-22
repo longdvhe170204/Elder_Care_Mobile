@@ -53,6 +53,11 @@ void main() {
     ];
   });
   tearDown(() => cache.close());
+  Future<void> open(WidgetTester tester, String task) async {
+    await tester.tap(find.text(task));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> view(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -66,7 +71,10 @@ void main() {
   testWidgets('FR_030_quaHanLenTruocVaTheHienLuaChon', (tester) async {
     await view(tester);
     expect(tester.getTopLeft(find.text('Việc quá hạn')).dy, lessThan(tester.getTopLeft(find.text('Việc đến hạn')).dy));
-    expect(find.text('Lựa chọn đã trao đổi'), findsNWidgets(2));
+    expect(find.text('QUÁ HẠN'), findsOneWidget);
+    expect(find.text('BÂY GIỜ'), findsOneWidget);
+    await open(tester, 'Việc đến hạn');
+    expect(find.text('Lựa chọn đã trao đổi'), findsOneWidget);
   });
   testWidgets('FR_030_dayDuNguCanhCongViecKhiChu200PhanTram', (tester) async {
     tester.view.physicalSize = const Size(375, 812);
@@ -100,6 +108,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text('Người kiểm thử · Phòng A · Giường 1 · 10:00'), findsOneWidget);
+    await open(tester, 'Hỗ trợ uống nước');
     expect(find.text('Phòng A · Giường 1'), findsOneWidget);
     expect(find.text('Khung giờ: 09:45–10:15'), findsOneWidget);
     expect(find.text('Dự kiến: 01/11/2026 10:00'), findsOneWidget);
@@ -123,6 +133,8 @@ void main() {
       {'type': 'SLEEP_QUALITY', 'code': 'QUIET', 'name': 'Ngủ yên', 'status': 'ACTIVE'},
     ];
     await view(tester);
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Thời gian ngủ (phút)'), '60');
@@ -138,7 +150,11 @@ void main() {
     gateway.failure = ApiUnreachable();
     await view(tester);
     expect(find.textContaining('Chưa cập nhật'), findsOneWidget);
+    await open(tester, 'Việc quá hạn');
     expect(find.text('Nhận công việc'), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await open(tester, 'Việc đến hạn');
     expect(find.text('Không thực hiện được…'), findsNothing);
   });
   testWidgets('BR_M15_20_offlineChecklistRecordsIntoSharedQueueAndShowsUnsynced', (tester) async {
@@ -161,6 +177,8 @@ void main() {
     await repository.load(1, 9);
     gateway.failure = ApiUnreachable();
     await view(tester);
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
@@ -172,6 +190,7 @@ void main() {
   });
   testWidgets('FR_028a_phaiChonLoaiLyDoTruocKhiLuu', (tester) async {
     await view(tester);
+    await open(tester, 'Việc đến hạn');
     await tester.tap(find.text('Không thực hiện được…'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Lưu Không thực hiện'));
@@ -182,6 +201,7 @@ void main() {
   testWidgets('FR_036_loiKhongMatGhiChuVaThuLaiCungUuid', (tester) async {
     gateway.commandFailure = ApiProblem(409, 'CARE_TASK_CLOSED', 'Công việc đã được ghi nhận.');
     await view(tester);
+    await open(tester, 'Việc đến hạn');
     await tester.tap(find.text('Không thực hiện được…'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Người cao tuổi từ chối'));
@@ -211,6 +231,8 @@ void main() {
     ];
     gateway.commandFailure = ApiProblem(409, 'CARE_TASK_CLOSED', 'Công việc đã được ghi nhận.');
     await view(tester);
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
@@ -231,6 +253,8 @@ void main() {
       },
     ];
     await view(tester);
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
@@ -247,7 +271,7 @@ void main() {
     final oldRequest = Completer<Map<String, dynamic>>();
     final newRequest = Completer<Map<String, dynamic>>();
     gateway.loader = (id) => id == 9 ? oldRequest.future : newRequest.future;
-    await tester.tap(find.text('Tải lại checklist'));
+    await tester.tap(find.byTooltip('Tải lại checklist'));
     await tester.pump();
     await tester.pumpWidget(
       MaterialApp(
@@ -341,10 +365,10 @@ void main() {
 
     testWidgets('baoSuCoTuTheCongViec_chonSanNguoiCaoTuoi', (tester) async {
       await journey(tester, links());
-      final buttons = find.text('Báo sự cố');
-      expect(buttons, findsNWidgets(3));
-      await tester.tap(buttons.first);
-      await tester.tap(buttons.at(1));
+      await tester.tap(find.text('Báo sự cố'));
+      await tester.pumpAndSettle();
+      await open(tester, 'Việc đến hạn');
+      await tester.tap(find.text('Báo sự cố'));
       await tester.pumpAndSettle();
       expect(opened, ['incident:null', 'incident:77']);
     });

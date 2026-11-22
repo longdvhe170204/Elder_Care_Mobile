@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/format/date_time.dart';
+import '../../common/theme/app_theme.dart';
 import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/page_body.dart';
 import '../../common/widgets/status_pill.dart';
@@ -39,6 +41,7 @@ class CareChecklistScreen extends StatefulWidget {
     this.links,
     this.medication,
     this.alertsApi,
+    this.shiftLabel,
   });
   final CareChecklistRepository repository;
 
@@ -51,6 +54,9 @@ class CareChecklistScreen extends StatefulWidget {
   /// Có quyền phát thuốc thì dòng liều bấm được, mở "Đối chiếu liều thuốc" (spec 2026-11-20 mục 5.2: liều thuốc là một
   /// dòng của Checklist ca, không còn mục Phát thuốc riêng); `null` thì dòng chỉ xem.
   final MedicationRoundRepository? medication;
+
+  /// Dòng ca dưới tiêu đề (Figma "Ca sáng · Tầng 2 · 07:00–15:00"), lấy từ ca đã chọn; checklist không trả thông tin ca.
+  final String? shiftLabel;
   @override
   State<CareChecklistScreen> createState() => _CareChecklistScreenState();
 }
@@ -213,21 +219,24 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     }
   }
 
-  Future<void> claim(Map<String, dynamic> task) async {
+  /// Trả `true` khi đã nhận việc để khung chi tiết đóng lại, checklist tải mới.
+  Future<bool> claim(Map<String, dynamic> task) async {
     setState(() => busy = true);
     try {
       await widget.repository.gateway.claim(task['id'] as int, careCommandKey());
       await load();
+      return true;
     } catch (e) {
       if (mounted) {
         setState(() => error = e is ApiProblem ? e.detail : 'Chưa nhận được công việc. Tải lại rồi thử lại.');
       }
+      return false;
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
-  Future<void> notPerform(Map<String, dynamic> task) async {
+  Future<bool> notPerform(Map<String, dynamic> task) async {
     final reasons =
         (loaded!.snapshot.content['nonPerformanceReasonTypes'] as List? ?? [])
             .map((r) => Map<String, dynamic>.from(r as Map))
@@ -240,9 +249,10 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
       builder: (_) => _NotPerformedForm(repository: widget.repository, taskId: task['id'] as int, reasons: reasons),
     );
     if (saved == true && mounted) await load();
+    return saved == true;
   }
 
-  Future<void> record(Map<String, dynamic> task) async {
+  Future<bool> record(Map<String, dynamic> task) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -256,145 +266,462 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
       ),
     );
     if (saved == true && mounted) await load();
+    return saved == true;
+  }
+
+  void openFollowUps(ApiClient api, List<dynamic>? openAlerts, Object? residentId) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (context) => Scaffold(
+        appBar: headerAppBar(context, title: 'Theo dõi cảnh báo'),
+        body: AlertFollowUpScreen(api: api, alertIds: followingAlertIds(openAlerts, residentId)),
+      ),
+    ),
+  );
+
+  /// Chi tiết công việc mở từ dòng checklist (Figma "Prototype · Mobile" 15:3317 "Ghi nhận công việc"): ngữ cảnh FR-030
+  /// và các lệnh backend cho phép.
+  Future<void> openTask(Map<String, dynamic> task) {
+    final data = loaded!.snapshot.content;
+    final openAlerts = data['openAlerts'] as List?;
+    final commands = task['allowedCommands'] as List? ?? const [];
+    final pending = widget.repository.pendingTaskIds.contains(task['id']);
+    final canWrite = loaded?.offline == false || widget.repository.recorder != null;
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => _TaskDetail(
+          task: task,
+          pending: pending,
+          followingLabel: followingLabel(openAlerts, task['residentId']),
+          onFollowUps: widget.alertsApi == null
+              ? null
+              : () => openFollowUps(widget.alertsApi!, openAlerts, task['residentId']),
+          agreements: [
+            for (final entry in (data['riskAgreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
+              if (entry['residentId'] == task['residentId'])
+                for (final a in (entry['agreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
+                  a['choice'] as String? ?? '',
+          ],
+          onRecord: canWrite && commands.contains('record') && !pending ? () => record(task) : null,
+          onClaim: loaded?.offline == false && commands.contains('claim') ? () => claim(task) : null,
+          onNotPerform: canWrite && commands.contains('notPerform') && !pending ? () => notPerform(task) : null,
+          onReport: widget.links != null && task['residentId'] != null
+              ? () => report(task['residentId'] as int)
+              : null,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tones = theme.extension<Tones>()!;
     final data = loaded?.snapshot.content;
     final tasks = (data?['tasks'] as List? ?? []).map((t) => Map<String, dynamic>.from(t as Map)).toList()
-      ..sort((a, b) {
-        final urgency = (b['status'] == 'OVERDUE' ? 1 : 0).compareTo(a['status'] == 'OVERDUE' ? 1 : 0);
-        return urgency != 0 ? urgency : (a['plannedAt'] as String? ?? '').compareTo(b['plannedAt'] as String? ?? '');
-      });
-    final agreements = (data?['riskAgreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map));
+      ..sort((a, b) => (a['plannedAt'] as String? ?? '').compareTo(b['plannedAt'] as String? ?? ''));
+    final openAlerts = data?['openAlerts'] as List?;
+    final names = <Object?, String>{
+      for (final t in tasks)
+        if ((t['residentCard'] as Map?)?['fullName'] case final String name) t['residentId']: name,
+    };
+    Widget taskRow(Map<String, dynamic> task) => _ChecklistRow(
+      icon: _taskIcon(task),
+      title: task['taskType'] as String? ?? '',
+      subtitle: _taskLine(task),
+      notes: [
+        if (widget.repository.pendingTaskIds.contains(task['id'])) 'Chưa đồng bộ',
+        if (task['awaitingRemeasurementConfirmation'] == true) 'Chờ xác nhận đo lại',
+        ?followingLabel(openAlerts, task['residentId']),
+      ],
+      onTap: () => openTask(task),
+    );
+    const open = {'OVERDUE', 'DUE', 'NOT_YET_DUE'};
+    final groups = <(String, Color, List<Map<String, dynamic>>)>[
+      ('Quá hạn', scheme.error, tasks.where((t) => t['status'] == 'OVERDUE').toList()),
+      ('Bây giờ', scheme.onSurfaceVariant, tasks.where((t) => t['status'] == 'DUE').toList()),
+      ('Sau đó', scheme.onSurfaceVariant, tasks.where((t) => t['status'] == 'NOT_YET_DUE').toList()),
+      ('Đã xong', scheme.onSurfaceVariant, tasks.where((t) => !open.contains(t['status'])).toList()),
+    ];
+    final doses = (data?['medicationDoses'] as List? ?? []).map((d) => Map<String, dynamic>.from(d as Map)).toList();
+    final alerts = (openAlerts ?? []).map((a) => Map<String, dynamic>.from(a as Map)).toList();
+    final handoverTasks = data?['handoverTasks'] as Map?;
+    final offlineNote = widget.repository.lastQueued
+        ? 'Chưa đồng bộ. Bản ghi đã lưu trên máy, sẽ đồng bộ khi có mạng.'
+        : loaded?.offline == true
+        ? (widget.repository.recorder == null
+              ? 'Đang xem bản đã tải. Kết nối lại và tải mới trước khi ghi nhận.'
+              : 'Đang ngoại tuyến. Bản ghi sẽ đồng bộ khi có mạng.')
+        : null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Checklist ca')),
+      appBar: headerAppBar(
+        context,
+        title: '',
+        actions: [
+          IconButton(
+            tooltip: 'Tải lại checklist',
+            onPressed: busy ? null : load,
+            icon: const Icon(LucideIcons.refreshCw),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: load,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            _ChecklistHeader(
+              subtitle: widget.shiftLabel ?? 'Ca ${widget.shiftId}',
+              updated: loaded == null
+                  ? null
+                  : '${loaded!.offline ? 'Chưa cập nhật · ' : 'Cập nhật '}${formatDateTime(loaded!.snapshot.loadedAt)}',
+              tones: tones,
+            ),
+            if (busy) const LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (offlineNote != null) ...[
+                    Semantics(liveRegion: true, child: _Notice(icon: LucideIcons.wifiOff, text: offlineNote)),
+                    const SizedBox(height: 8),
+                  ],
+                  if (error != null) ...[
+                    _Notice(icon: LucideIcons.circleAlert, text: error!, danger: true),
+                    const SizedBox(height: 8),
+                  ],
+                  if (widget.links != null && loaded != null)
+                    ShiftJourney(
+                      steps: buildShiftSteps(
+                        tasks: tasks,
+                        incidents: incidents,
+                        incidentsLoading: incidentsLoading,
+                        handover: handover,
+                      ),
+                      onAction: (key) => journeyAction(key, tasks),
+                    ),
+                  if (loaded != null && tasks.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text('Chưa có công việc trong phạm vi được giao.', style: theme.textTheme.bodyMedium),
+                    ),
+                  for (final (label, color, rows) in groups)
+                    if (rows.isNotEmpty) _Section(label: label, color: color, rows: [for (final t in rows) taskRow(t)]),
+                  if (doses.isNotEmpty)
+                    _Section(
+                      label: 'Liều thuốc',
+                      color: scheme.onSurfaceVariant,
+                      rows: [
+                        for (final dose in doses)
+                          _ChecklistRow(
+                            icon: LucideIcons.pill,
+                            title:
+                                (dose['medication'] as Map?)?['description'] as String? ??
+                                'Liều thuốc ${dose['doseKey']}',
+                            subtitle: dose['plannedAt'] == null
+                                ? null
+                                : 'Dự kiến ${formatTime(DateTime.parse(dose['plannedAt'] as String))}',
+                            onTap: widget.medication == null ? null : () => openDose(dose['doseKey'] as String),
+                          ),
+                      ],
+                    ),
+                  if (alerts.isNotEmpty)
+                    _Section(
+                      label: 'Cảnh báo đang mở',
+                      color: scheme.onSurfaceVariant,
+                      rows: [
+                        for (final alert in alerts)
+                          _ChecklistRow(
+                            icon: LucideIcons.triangleAlert,
+                            title: alert['type'] == null
+                                ? 'Cảnh báo #${alert['id']}'
+                                : alertTypeName(alert['type'] as String?),
+                            subtitle: names[alert['residentId']],
+                            onTap: widget.alertsApi == null || alert['residentId'] == null
+                                ? null
+                                : () => openFollowUps(widget.alertsApi!, openAlerts, alert['residentId']),
+                          ),
+                      ],
+                    ),
+                  if (handoverTasks?['receiveAtStart'] == true || handoverTasks?['prepareAtEnd'] == true)
+                    _Section(
+                      label: 'Bàn giao',
+                      color: scheme.onSurfaceVariant,
+                      rows: [
+                        if (handoverTasks?['receiveAtStart'] == true)
+                          _ChecklistRow(
+                            icon: LucideIcons.arrowLeftRight,
+                            title: 'Nhận bàn giao đầu ca',
+                            onTap: widget.links == null ? null : () => journeyAction('handover', tasks),
+                          ),
+                        if (handoverTasks?['prepareAtEnd'] == true)
+                          _ChecklistRow(
+                            icon: LucideIcons.arrowLeftRight,
+                            title: 'Lập bàn giao cuối ca',
+                            onTap: widget.links == null ? null : () => journeyAction('handover', tasks),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dòng phụ của dòng công việc (Figma "Nguyễn Thị Lan · P. 203 · 09:00"): người cao tuổi hoặc nơi làm, phòng giường,
+/// giờ dự kiến.
+String _taskLine(Map<String, dynamic> task) {
+  final card = task['residentCard'] as Map?;
+  return [
+    card?['fullName'] as String? ?? task['location'] as String? ?? 'Công việc tầng/khu',
+    if (card?['roomBed'] case final String roomBed) roomBed,
+    if (task['plannedAt'] case final String at) formatTime(DateTime.parse(at)),
+  ].join(' · ');
+}
+
+/// Biểu tượng theo trạng thái rồi nguồn sinh (Figma: đồng hồ cho việc quá hạn, nhịp cho đo, đĩa cho bữa ăn).
+IconData _taskIcon(Map<String, dynamic> task) {
+  if (task['status'] == 'OVERDUE') return LucideIcons.clock;
+  if (!const {'DUE', 'NOT_YET_DUE'}.contains(task['status'])) return LucideIcons.circleCheck;
+  return switch ((task['basis'] as Map?)?['type']) {
+    'MEASUREMENT' => LucideIcons.activity,
+    'MEAL' => LucideIcons.utensils,
+    'ACTIVITY_SESSION' => LucideIcons.users,
+    _ => LucideIcons.listChecks,
+  };
+}
+
+/// Phần chữ của đầu màn xanh đêm (Figma "Đầu màn"): tiêu đề lớn, ca, giờ cập nhật.
+class _ChecklistHeader extends StatelessWidget {
+  const _ChecklistHeader({required this.subtitle, required this.updated, required this.tones});
+
+  final String subtitle;
+  final String? updated;
+  final Tones tones;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return ColoredBox(
+      color: tones.header,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              header: true,
+              child: Text('Checklist ca', style: text.headlineMedium?.copyWith(color: tones.headerInkStrong)),
+            ),
+            const SizedBox(height: 8),
+            Text(subtitle, style: text.bodyMedium?.copyWith(color: tones.headerInk)),
+            if (updated != null) Text(updated!, style: text.bodySmall?.copyWith(color: tones.headerInkMuted)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Thẻ báo trắng có biểu tượng (Figma "Đang ngoại tuyến. Bản ghi sẽ đồng bộ khi có mạng.").
+class _Notice extends StatelessWidget {
+  const _Notice({required this.icon, required this.text, this.danger = false});
+
+  final IconData icon;
+  final String text;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = danger ? scheme.error : scheme.onSurfaceVariant;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Một nhóm của checklist (Figma "QUÁ HẠN", "BÂY GIỜ", "SAU ĐÓ"): nhãn chữ hoa rồi khối dòng trắng bo góc.
+class _Section extends StatelessWidget {
+  const _Section({required this.label, required this.color, required this.rows});
+
+  final String label;
+  final Color color;
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(label.toUpperCase(), style: Theme.of(context).textTheme.labelLarge?.copyWith(color: color)),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: ListTile.divideTiles(context: context, tiles: rows).toList()),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Dòng của khối "Danh sách" (Figma): ô biểu tượng 36 nền phụ, tên việc, dòng phụ, ghi chú ngắn, mũi tên khi bấm được.
+class _ChecklistRow extends StatelessWidget {
+  const _ChecklistRow({required this.icon, required this.title, this.subtitle, this.notes = const [], this.onTap});
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final List<String> notes;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tones = theme.extension<Tones>()!;
+    return ListTile(
+      minTileHeight: 72,
+      onTap: onTap,
+      leading: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(AppRadius.menu),
+        ),
+        child: SizedBox.square(dimension: 36, child: Icon(icon, size: 20, color: theme.colorScheme.secondary)),
+      ),
+      title: Text(title, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
+      subtitle: subtitle == null && notes.isEmpty
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitle != null) Text(subtitle!),
+                for (final note in notes)
+                  Text(note, style: theme.textTheme.bodySmall?.copyWith(color: tones.attentionInk)),
+              ],
+            ),
+      trailing: onTap == null ? null : const Icon(LucideIcons.chevronRight),
+    );
+  }
+}
+
+/// Chi tiết một công việc mở từ dòng checklist: ngữ cảnh (FR-030), nhãn Đang theo dõi, thỏa thuận lựa chọn có rủi ro và
+/// các lệnh backend cho phép. Ghi nhận, Không thực hiện, Nhận việc xong thì đóng về checklist đã tải mới.
+class _TaskDetail extends StatefulWidget {
+  const _TaskDetail({
+    required this.task,
+    required this.pending,
+    required this.followingLabel,
+    required this.onFollowUps,
+    required this.agreements,
+    required this.onRecord,
+    required this.onClaim,
+    required this.onNotPerform,
+    required this.onReport,
+  });
+
+  final Map<String, dynamic> task;
+  final bool pending;
+  final String? followingLabel;
+  final VoidCallback? onFollowUps;
+  final List<String> agreements;
+  final Future<bool> Function()? onRecord;
+  final Future<bool> Function()? onClaim;
+  final Future<bool> Function()? onNotPerform;
+  final Future<void> Function()? onReport;
+
+  @override
+  State<_TaskDetail> createState() => _TaskDetailState();
+}
+
+class _TaskDetailState extends State<_TaskDetail> {
+  bool busy = false;
+
+  Future<void> run(Future<bool> Function() action) async {
+    setState(() => busy = true);
+    final done = await action();
+    if (!mounted) return;
+    setState(() => busy = false);
+    if (done) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final task = widget.task;
+    return Scaffold(
+      appBar: headerAppBar(context, title: task['taskType'] as String? ?? 'Công việc'),
       body: PageBody(
         child: ListView(
           children: [
-            if (busy) const LinearProgressIndicator(),
-            if (widget.repository.lastQueued)
-              Semantics(
-                liveRegion: true,
-                child: const Text('Chưa đồng bộ. Bản ghi đã lưu trên máy, sẽ đồng bộ khi có mạng.'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: StatusPill(
+                label: _status(task['status'] as String?),
+                tone: task['status'] == 'OVERDUE' ? StatusTone.urgent : StatusTone.neutral,
               ),
-            if (error != null) Text(error!, semanticsLabel: error),
-            if (loaded != null)
-              Text('${loaded!.offline ? 'Chưa cập nhật · ' : 'Cập nhật '}${formatDateTime(loaded!.snapshot.loadedAt)}'),
-            if (loaded?.offline == true)
-              Text(
-                widget.repository.recorder == null
-                    ? 'Đang xem bản đã tải. Kết nối lại và tải mới trước khi ghi nhận.'
-                    : 'Đang ngoại tuyến. Bản ghi sẽ đồng bộ khi có mạng.',
+            ),
+            if (widget.pending) Text('Chưa đồng bộ', style: theme.textTheme.bodyMedium),
+            if (task['awaitingRemeasurementConfirmation'] == true) const Text('Chờ xác nhận đo lại'),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(padding: const EdgeInsets.all(16), child: CareTaskContext(task: task)),
+            ),
+            if (widget.followingLabel case final label?) ...[
+              const SizedBox(height: 8),
+              if (widget.onFollowUps case final open?)
+                TextButton(
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                  onPressed: open,
+                  child: Text('$label ›'),
+                )
+              else
+                Text(label, style: theme.textTheme.bodyMedium),
+            ],
+            if (widget.agreements.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Lựa chọn đã thỏa thuận', style: theme.textTheme.titleSmall),
+              for (final choice in widget.agreements) Text(choice),
+            ],
+            const SizedBox(height: 24),
+            if (widget.onRecord case final record?)
+              FilledButton(onPressed: busy ? null : () => run(record), child: const Text('Ghi nhận kết quả')),
+            if (widget.onClaim case final claim?) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: busy ? null : () => run(claim), child: const Text('Nhận công việc')),
+            ],
+            if (widget.onNotPerform case final notPerform?) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: busy ? null : () => run(notPerform),
+                child: const Text('Không thực hiện được…'),
               ),
-            TextButton(onPressed: busy ? null : load, child: const Text('Tải lại checklist')),
-            if (widget.links != null && loaded != null)
-              ShiftJourney(
-                steps: buildShiftSteps(
-                  tasks: tasks,
-                  incidents: incidents,
-                  incidentsLoading: incidentsLoading,
-                  handover: handover,
-                ),
-                onAction: (key) => journeyAction(key, tasks),
-              ),
-            if (loaded != null && tasks.isEmpty) const Text('Chưa có công việc trong phạm vi được giao.'),
-            for (final dose in (data?['medicationDoses'] as List? ?? []).map(
-              (d) => Map<String, dynamic>.from(d as Map),
-            ))
-              ListTile(
-                title: Text((dose['medication'] as Map?)?['description'] as String? ?? 'Liều thuốc ${dose['doseKey']}'),
-                subtitle: dose['plannedAt'] == null
-                    ? null
-                    : Text('Dự kiến ${formatTime(DateTime.parse(dose['plannedAt'] as String))}'),
-                trailing: widget.medication == null ? null : const Icon(Icons.chevron_right),
-                onTap: widget.medication == null ? null : () => openDose(dose['doseKey'] as String),
-              ),
-            for (final alert in (data?['openAlerts'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
-              ListTile(title: Text('Cảnh báo #${alert['id']}')),
-            if ((data?['handoverTasks'] as Map?)?['receiveAtStart'] == true)
-              const ListTile(title: Text('Nhận bàn giao đầu ca')),
-            if ((data?['handoverTasks'] as Map?)?['prepareAtEnd'] == true)
-              const ListTile(title: Text('Lập bàn giao cuối ca')),
-            for (final task in tasks)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Divider(),
-                  Material(
-                    color: Theme.of(context).colorScheme.surface,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          StatusPill(
-                            label: _status(task['status'] as String?),
-                            tone: task['status'] == 'OVERDUE' ? StatusTone.urgent : StatusTone.neutral,
-                          ),
-                          Text(task['taskType'] as String? ?? '', style: Theme.of(context).textTheme.titleMedium),
-                          if (widget.repository.pendingTaskIds.contains(task['id'])) const Text('Chưa đồng bộ'),
-                          CareTaskContext(task: task),
-                          if (followingLabel(data?['openAlerts'] as List?, task['residentId']) case final label?)
-                            if (widget.alertsApi case final api?)
-                              TextButton(
-                                style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => Scaffold(
-                                      appBar: AppBar(title: const Text('Theo dõi cảnh báo')),
-                                      body: AlertFollowUpScreen(
-                                        api: api,
-                                        alertIds: followingAlertIds(
-                                          data?['openAlerts'] as List?,
-                                          task['residentId'],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                child: Text('$label ›'),
-                              )
-                            else
-                              Text(label, style: Theme.of(context).textTheme.bodyMedium),
-                          if (task['awaitingRemeasurementConfirmation'] == true) const Text('Chờ xác nhận đo lại'),
-                          if ((loaded?.offline == false || widget.repository.recorder != null) &&
-                              (task['allowedCommands'] as List? ?? []).contains('record'))
-                            FilledButton(
-                              onPressed: busy || widget.repository.pendingTaskIds.contains(task['id'])
-                                  ? null
-                                  : () => record(task),
-                              child: const Text('Ghi nhận kết quả'),
-                            ),
-                          for (final entry in agreements.where((a) => a['residentId'] == task['residentId']))
-                            for (final agreement in (entry['agreements'] as List? ?? []).map(
-                              (a) => Map<String, dynamic>.from(a as Map),
-                            ))
-                              Text(agreement['choice'] as String? ?? ''),
-                          if (widget.links != null && task['residentId'] != null)
-                            OutlinedButton(
-                              onPressed: () => report(task['residentId'] as int),
-                              child: const Text('Báo sự cố'),
-                            ),
-                          if (loaded?.offline == false && (task['allowedCommands'] as List? ?? []).contains('claim'))
-                            OutlinedButton(
-                              onPressed: busy ? null : () => claim(task),
-                              child: const Text('Nhận công việc'),
-                            ),
-                          if ((loaded?.offline == false || widget.repository.recorder != null) &&
-                              (task['allowedCommands'] as List? ?? []).contains('notPerform'))
-                            OutlinedButton(
-                              onPressed: busy || widget.repository.pendingTaskIds.contains(task['id'])
-                                  ? null
-                                  : () => notPerform(task),
-                              child: const Text('Không thực hiện được…'),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            ],
+            if (widget.onReport case final report?) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: report, child: const Text('Báo sự cố')),
+            ],
           ],
         ),
       ),

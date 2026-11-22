@@ -139,6 +139,7 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
               links: apiShiftJourneyLinks(widget.api),
               medication: widget.medication,
               alertsApi: widget.api,
+              shiftLabel: _shiftLabel(rows.where((r) => r['id'] == selected).firstOrNull),
             ),
           ),
         );
@@ -226,6 +227,14 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
       ],
     ),
   );
+}
+
+/// Dòng ca dưới tiêu đề Checklist ca: giờ bắt đầu, kết thúc và ngày; bản tải ngoại tuyến chỉ có mã ca nên để trống.
+String? _shiftLabel(Map<String, dynamic>? row) {
+  final starts = DateTime.tryParse(row?['startsAt'] as String? ?? '');
+  final ends = DateTime.tryParse(row?['endsAt'] as String? ?? '');
+  if (starts == null || ends == null) return null;
+  return 'Ca ${formatTime(starts)}–${formatTime(ends)} · ${formatDateTime(starts).split(' ').first}';
 }
 
 const _shiftStatus = {
