@@ -66,14 +66,14 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
     super.dispose();
   }
 
-  Future<void> openChecklist(Map<String, dynamic> shift, {int? taskId}) => Navigator.of(context).push<void>(
+  Future<void> openResident(Map<String, dynamic> shift, String residentKey) => Navigator.of(context).push<void>(
     MaterialPageRoute(
       builder: (_) => CareChecklistScreen(
         repository: repository,
         accountId: widget.accountId,
         shiftId: shift['id'] as int,
         shiftLabel: shiftLabel(shift),
-        initialTaskId: taskId,
+        residentKey: residentKey,
         links: apiCareChecklistLinks(widget.api),
         medication: widget.medication,
         alertsApi: widget.api,
@@ -220,7 +220,7 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
               shifts: ApiCareTaskPlanningGateway(widget.api).shiftsBetween,
               repository: repository,
               accountId: widget.accountId,
-              openChecklist: openChecklist,
+              openResident: openResident,
               clock: widget.clock,
             ),
           ),

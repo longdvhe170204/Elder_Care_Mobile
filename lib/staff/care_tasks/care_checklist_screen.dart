@@ -41,7 +41,7 @@ class CareChecklistScreen extends StatefulWidget {
     this.medication,
     this.alertsApi,
     this.shiftLabel,
-    this.initialTaskId,
+    this.residentKey,
   });
   final CareChecklistRepository repository;
 
@@ -58,8 +58,8 @@ class CareChecklistScreen extends StatefulWidget {
   /// Dòng ca dưới tiêu đề (Figma "Ca sáng · Tầng 2 · 07:00–15:00"), lấy từ ca đã chọn; checklist không trả thông tin ca.
   final String? shiftLabel;
 
-  /// Mở sẵn khung chi tiết của việc này sau lần tải đầu (bấm một việc ở Checklist theo tuần).
-  final int? initialTaskId;
+  /// Có thì màn là "Việc chăm sóc" của một người cao tuổi ([careGroupKey]) thay cho cả checklist (Figma 105:1324).
+  final String? residentKey;
   @override
   State<CareChecklistScreen> createState() => _CareChecklistScreenState();
 }
@@ -96,10 +96,7 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     });
     try {
       final next = await widget.repository.load(accountId, shiftId);
-      if (mounted && generation == token) {
-        setState(() => loaded = next);
-        openInitialTask();
-      }
+      if (mounted && generation == token) setState(() => loaded = next);
     } catch (e) {
       if (mounted && generation == token) {
         setState(() {
@@ -110,18 +107,6 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     } finally {
       if (mounted && generation == token) setState(() => busy = false);
     }
-  }
-
-  bool _openedInitial = false;
-
-  void openInitialTask() {
-    if (_openedInitial || widget.initialTaskId == null) return;
-    _openedInitial = true;
-    final task = (loaded!.snapshot.content['tasks'] as List? ?? [])
-        .map((t) => Map<String, dynamic>.from(t as Map))
-        .where((t) => t['id'] == widget.initialTaskId)
-        .firstOrNull;
-    if (task != null) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? openTask(task) : null);
   }
 
   /// Mở "Đối chiếu liều thuốc" (Figma 5:290) cho liều [doseKey] bằng khung ghi liều của vòng phát thuốc (006); liều
@@ -260,17 +245,92 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
           onRecord: canWrite && commands.contains('record') && !pending ? () => record(task) : null,
           onClaim: loaded?.offline == false && commands.contains('claim') ? () => claim(task) : null,
           onNotPerform: canWrite && commands.contains('notPerform') && !pending ? () => notPerform(task) : null,
-          onReport: widget.links != null && task['residentId'] != null
-              ? () => report(task['residentId'] as int)
-              : null,
+          onReport: widget.links != null && task['residentId'] != null ? () => report(task['residentId'] as int) : null,
           onPlan: widget.links != null && task['residentId'] != null ? () => openPlan(task) : null,
         ),
       ),
     );
   }
 
+  /// Màn "Việc chăm sóc" của một người cao tuổi: đầu màn có dòng ca, thân là [_ResidentCare].
+  Widget residentScaffold(BuildContext context) {
+    final theme = Theme.of(context);
+    final tones = theme.extension<Tones>()!;
+    final data = loaded?.snapshot.content;
+    final tasks =
+        (data?['tasks'] as List? ?? [])
+            .map((t) => Map<String, dynamic>.from(t as Map))
+            .where((t) => careGroupKey(t) == widget.residentKey)
+            .toList()
+          ..sort((a, b) => (a['plannedAt'] as String? ?? '').compareTo(b['plannedAt'] as String? ?? ''));
+    final residentId = tasks.firstOrNull?['residentId'];
+    final doses = (data?['medicationDoses'] as List? ?? [])
+        .map((d) => Map<String, dynamic>.from(d as Map))
+        .where((d) => residentId != null && d['residentId'] == residentId)
+        .toList();
+    final canWrite = loaded?.offline == false || widget.repository.recorder != null;
+    final note = widget.repository.lastQueued
+        ? 'Chưa đồng bộ. Bản ghi đã lưu trên máy, sẽ đồng bộ khi có mạng.'
+        : loaded?.offline == true
+        ? 'Đang xem bản đã tải, chưa cập nhật.'
+        : null;
+    return Scaffold(
+      appBar: headerAppBar(context, title: 'Việc chăm sóc'),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ColoredBox(
+            color: tones.header,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 16),
+              child: Text(
+                widget.shiftLabel ?? 'Ca ${widget.shiftId}',
+                style: theme.textTheme.labelLarge?.copyWith(color: tones.headerInk),
+              ),
+            ),
+          ),
+          if (busy) const LinearProgressIndicator(),
+          if (note != null || error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: Semantics(
+                liveRegion: true,
+                child: _Notice(
+                  icon: error != null ? LucideIcons.circleAlert : LucideIcons.wifiOff,
+                  text: error ?? note!,
+                  danger: error != null,
+                ),
+              ),
+            ),
+          Expanded(
+            child: loaded == null
+                ? const SizedBox.shrink()
+                : RefreshIndicator(
+                    onRefresh: load,
+                    child: _ResidentCare(
+                      tasks: tasks,
+                      doses: doses,
+                      pending: widget.repository.pendingTaskIds,
+                      openAlerts: data?['openAlerts'] as List?,
+                      onRecord: (task) =>
+                          canWrite &&
+                              (task['allowedCommands'] as List? ?? const []).contains('record') &&
+                              !widget.repository.pendingTaskIds.contains(task['id'])
+                          ? () => record(task)
+                          : null,
+                      onOpen: openTask,
+                      onDose: (dose) => widget.medication == null ? null : () => openDose(dose['doseKey'] as String),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.residentKey != null) return residentScaffold(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final tones = theme.extension<Tones>()!;
@@ -341,7 +401,10 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (offlineNote != null) ...[
-                    Semantics(liveRegion: true, child: _Notice(icon: LucideIcons.wifiOff, text: offlineNote)),
+                    Semantics(
+                      liveRegion: true,
+                      child: _Notice(icon: LucideIcons.wifiOff, text: offlineNote),
+                    ),
                     const SizedBox(height: 8),
                   ],
                   if (error != null) ...[
@@ -526,7 +589,9 @@ class _Section extends StatelessWidget {
         const SizedBox(height: 8),
         Card(
           clipBehavior: Clip.antiAlias,
-          child: Column(children: ListTile.divideTiles(context: context, tiles: rows).toList()),
+          child: Column(
+            children: ListTile.divideTiles(context: context, tiles: rows).toList(),
+          ),
         ),
       ],
     ),
@@ -635,7 +700,10 @@ class _TaskDetailState extends State<_TaskDetail> {
             if (task['awaitingRemeasurementConfirmation'] == true) const Text('Chờ xác nhận đo lại'),
             const SizedBox(height: 8),
             Card(
-              child: Padding(padding: const EdgeInsets.all(16), child: CareTaskContext(task: task)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: CareTaskContext(task: task),
+              ),
             ),
             if (widget.followingLabel case final label?) ...[
               const SizedBox(height: 8),
@@ -678,6 +746,406 @@ class _TaskDetailState extends State<_TaskDetail> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Khóa nhóm công việc theo người cao tuổi (Figma 105:1024 "Checklist ca · Theo người cao tuổi"); việc không gắn người
+/// cao tuổi nhóm theo nơi làm.
+String careGroupKey(Map<String, dynamic> task) =>
+    task['residentId'] != null ? 'r:${task['residentId']}' : 'l:${task['location'] ?? ''}';
+
+/// Chữ viết tắt trên ảnh đại diện: chữ đầu của họ và của tên (Figma "NL" cho Nguyễn Thị Lan).
+String initialsOf(String name) {
+  final words = name.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  if (words.isEmpty) return '?';
+  final first = words.first.characters.first;
+  return words.length == 1 ? first.toUpperCase() : '$first${words.last.characters.first}'.toUpperCase();
+}
+
+const openTaskStatuses = {'OVERDUE', 'DUE', 'NOT_YET_DUE'};
+
+/// "Việc chăm sóc" của một người cao tuổi trong ca (Figma 105:1324): thẻ người cao tuổi, "Cần thực hiện" có nút Ghi nhận,
+/// liều thuốc của người đó, "Đã hoàn thành" thu gọn được. Bấm thẻ việc mở khung chi tiết (các lệnh khác, kế hoạch, sự cố).
+class _ResidentCare extends StatefulWidget {
+  const _ResidentCare({
+    required this.tasks,
+    required this.doses,
+    required this.pending,
+    required this.openAlerts,
+    required this.onRecord,
+    required this.onOpen,
+    required this.onDose,
+  });
+
+  final List<Map<String, dynamic>> tasks;
+  final List<Map<String, dynamic>> doses;
+  final Set<int> pending;
+  final List<dynamic>? openAlerts;
+
+  /// null khi việc không ghi nhận được lúc này (backend không trả lệnh `record`, đang chờ đồng bộ, ngoại tuyến không ghi).
+  final VoidCallback? Function(Map<String, dynamic> task) onRecord;
+  final void Function(Map<String, dynamic> task) onOpen;
+  final VoidCallback? Function(Map<String, dynamic> dose) onDose;
+
+  @override
+  State<_ResidentCare> createState() => _ResidentCareState();
+}
+
+class _ResidentCareState extends State<_ResidentCare> {
+  bool showDone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tones = theme.extension<Tones>()!;
+    final text = theme.textTheme;
+    final first = widget.tasks.firstOrNull;
+    final card = first?['residentCard'] as Map?;
+    final name = card?['fullName'] as String? ?? first?['location'] as String? ?? 'Công việc tầng/khu';
+    final open = widget.tasks.where((t) => openTaskStatuses.contains(t['status'])).toList();
+    final done = widget.tasks.where((t) => !openTaskStatuses.contains(t['status'])).toList();
+    final heading = text.titleLarge?.copyWith(fontSize: 19, fontWeight: FontWeight.w700);
+    final following = followingLabel(widget.openAlerts, first?['residentId']);
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        _Box(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+            child: Row(
+              children: [
+                Initials(name: name, size: 52),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: text.headlineSmall?.copyWith(fontSize: 21, fontWeight: FontWeight.w700)),
+                      if (card?['roomBed'] case final String room)
+                        Text(room, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${done.length}/${widget.tasks.length} việc đã hoàn thành',
+                        style: text.labelLarge?.copyWith(color: scheme.secondary, fontWeight: FontWeight.w600),
+                      ),
+                      if (following != null)
+                        Text(following, style: text.bodySmall?.copyWith(color: tones.attentionInk)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(
+              child: Semantics(header: true, child: Text('Cần thực hiện', style: heading)),
+            ),
+            Text(
+              '${open.length} việc',
+              style: text.labelLarge?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (open.isEmpty)
+          _Box(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Không còn việc cần thực hiện.', style: text.bodyMedium),
+            ),
+          ),
+        for (final task in open) ...[
+          _TaskCard(
+            task: task,
+            pending: widget.pending.contains(task['id']),
+            onRecord: widget.onRecord(task),
+            onOpen: () => widget.onOpen(task),
+          ),
+          const SizedBox(height: 10),
+        ],
+        if (widget.doses.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Semantics(header: true, child: Text('Liều thuốc', style: heading)),
+          const SizedBox(height: 10),
+          for (final dose in widget.doses) ...[
+            _DoseCard(dose: dose, onRecord: widget.onDose(dose)),
+            const SizedBox(height: 10),
+          ],
+        ],
+        if (done.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _Box(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                InkWell(
+                  onTap: () => setState(() => showDone = !showDone),
+                  child: SizedBox(
+                    height: 56,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Đã hoàn thành · ${done.length} việc',
+                              style: text.bodyLarge?.copyWith(color: tones.settledInk, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          Icon(
+                            showDone ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                            size: 18,
+                            color: scheme.onSurfaceVariant,
+                            semanticLabel: showDone ? 'Thu gọn' : 'Mở',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (showDone)
+                  for (final task in done)
+                    Material(
+                      color: scheme.surfaceContainerHighest,
+                      child: InkWell(
+                        onTap: () => widget.onOpen(task),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                task['taskType'] as String? ?? '',
+                                style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                [
+                                  if (task['plannedAt'] case final String at) formatTime(DateTime.parse(at)),
+                                  if (task['status'] != 'COMPLETED') _status(task['status'] as String?),
+                                ].join(' · '),
+                                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Thẻ một việc cần thực hiện: tên, giờ dự kiến và nhãn trạng thái, nút "Ghi nhận" bên phải.
+class _TaskCard extends StatelessWidget {
+  const _TaskCard({required this.task, required this.pending, required this.onRecord, required this.onOpen});
+
+  final Map<String, dynamic> task;
+  final bool pending;
+  final VoidCallback? onRecord;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final text = theme.textTheme;
+    final overdue = task['status'] == 'OVERDUE';
+    final ink = overdue ? scheme.error : scheme.secondary;
+    final label = switch (task['status']) {
+      'OVERDUE' => 'Quá hạn',
+      'DUE' => 'Đến giờ',
+      _ => 'Sắp tới',
+    };
+    return _Box(
+      child: InkWell(
+        onTap: onOpen,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 88),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task['taskType'] as String? ?? '',
+                        style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (task['plannedAt'] case final String at)
+                            Text(
+                              formatTime(DateTime.parse(at)),
+                              style: text.labelLarge?.copyWith(color: ink, fontWeight: FontWeight.w600),
+                            ),
+                          _Chip(
+                            label: label,
+                            fill: overdue ? scheme.errorContainer : scheme.surfaceContainerHighest,
+                            ink: ink,
+                          ),
+                          if (pending)
+                            _Chip(
+                              label: 'Chưa đồng bộ',
+                              fill: scheme.surfaceContainerHighest,
+                              ink: scheme.onSurfaceVariant,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (onRecord != null) _RecordButton(onPressed: onRecord!),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DoseCard extends StatelessWidget {
+  const _DoseCard({required this.dose, required this.onRecord});
+
+  final Map<String, dynamic> dose;
+  final VoidCallback? onRecord;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return _Box(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 72),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (dose['medication'] as Map?)?['description'] as String? ?? 'Liều thuốc ${dose['doseKey']}',
+                      style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (dose['plannedAt'] case final String at)
+                      Text(
+                        'Dự kiến ${formatTime(DateTime.parse(at))}',
+                        style: text.labelLarge?.copyWith(color: scheme.secondary, fontWeight: FontWeight.w600),
+                      ),
+                  ],
+                ),
+              ),
+              if (onRecord != null) ...[const SizedBox(width: 10), _RecordButton(onPressed: onRecord!)],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordButton extends StatelessWidget {
+  const _RecordButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton(
+      style: TextButton.styleFrom(
+        backgroundColor: scheme.surfaceContainerHighest,
+        foregroundColor: scheme.secondary,
+        minimumSize: const Size(88, 48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+        textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      onPressed: onPressed,
+      child: const Text('Ghi nhận'),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.fill, required this.ink});
+
+  final String label;
+  final Color fill;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(AppRadius.menu)),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: ink, fontWeight: FontWeight.w600),
+      ),
+    ),
+  );
+}
+
+/// Ảnh đại diện chữ viết tắt, nền xanh trời nhạt bo 13 (Figma "Ảnh đại diện").
+class Initials extends StatelessWidget {
+  const Initials({super.key, required this.name, required this.size});
+
+  final String name;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ExcludeSemantics(
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(13)),
+        child: Text(
+          initialsOf(name),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: scheme.secondary, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
+/// Khối trắng bo 12 viền mảnh.
+class _Box extends StatelessWidget {
+  const _Box({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: child,
     );
   }
 }
