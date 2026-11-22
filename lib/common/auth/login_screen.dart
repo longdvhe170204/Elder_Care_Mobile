@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../api/api_client.dart';
 import '../api/problem_message.dart';
-import '../widgets/page_body.dart';
+import 'auth_layout.dart';
 import 'forgot_password_screen.dart';
 
-/// Màn đầu khi chưa đăng nhập (000 T006; 002 T046, T047; sửa 2026-10-28, chủ dự án duyệt): một form tên đăng nhập, mật
-/// khẩu cho nhân viên và người thân (kênh `MOBILE_APP`, backend gán kênh phiên theo loại tài khoản nên thời gian tự đăng
-/// xuất theo kênh giữ nguyên, FR-013a), kèm câu máy dùng chung (FR-014a); nút phụ mở màn quét mã của người cao tuổi
-/// (FR-069). Máy đã gắn với tài khoản người cao tuổi không qua màn này. Màn quét mã do `ElderCareApp` truyền vào để
-/// `common/` không phụ thuộc `resident/` (mobile/README.md luật 1). Lỗi theo câu backend trả (không lộ tài khoản có hay
-/// không, FR-014). Có `api` và kênh tin nhắn đã cấu hình thì có nút "Quên mật khẩu" (002 T105, FR-052a, Q-06).
+export 'auth_layout.dart' show appVersion;
+
+/// Màn đầu khi chưa đăng nhập (000 T006; 002 T046, T047; sửa 2026-10-28, chủ dự án duyệt; tỷ lệ theo Figma "Đăng nhập · Mobile"
+/// 88:254 trên khung chung [AuthLayout]): logo, một form tên đăng nhập, mật khẩu cho nhân viên và người thân (kênh `MOBILE_APP`, backend gán kênh
+/// phiên theo loại tài khoản nên thời gian tự đăng xuất theo kênh giữ nguyên, FR-013a),; nút phụ mở màn quét mã của người cao tuổi (FR-069). Máy đã gắn với tài khoản người cao tuổi không qua màn
+/// này. Màn quét mã do `ElderCareApp` truyền vào để `common/` không phụ thuộc `resident/` (mobile/README.md luật 1). Lỗi
+/// theo câu backend trả (không lộ tài khoản có hay không, FR-014). Có `api` và kênh tin nhắn đã cấu hình thì có
+/// "Quên mật khẩu?" (002 T105, FR-052a, Q-06). Ô đầu là tên đăng nhập vì backend đăng nhập bằng tên đăng nhập (anh chốt
+/// 2026-11-21, mẫu ghi "Số điện thoại").
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onSubmit, required this.residentLogin, this.notice, this.api});
+
+  static const usernameKey = ValueKey('login.username');
+  static const passwordKey = ValueKey('login.password');
 
   final Future<void> Function(String username, String password) onSubmit;
   final WidgetBuilder residentLogin;
@@ -31,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
+  bool _showPassword = false;
   String? _error;
   bool _resetAvailable = false;
   bool _resetDone = false;
@@ -68,6 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -84,71 +93,68 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Scaffold(
-      body: PageBody(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  Text('Elder Care', style: text.headlineMedium),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Nhân viên, người thân đăng nhập bằng tài khoản viện cấp. Máy dùng chung: đăng nhập sẽ kết thúc phiên '
-                    'của người trước trên máy này.',
-                    style: text.bodyMedium,
-                  ),
-                  if (widget.notice != null) ...[
-                    const SizedBox(height: 12),
-                    Text(widget.notice!, style: text.bodyMedium),
-                  ],
-                  if (_resetDone) ...[
-                    const SizedBox(height: 12),
-                    Text('Đã đặt mật khẩu mới. Đăng nhập bằng mật khẩu mới.', style: text.bodyMedium),
-                  ],
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_error!, style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.error)),
-                  ],
-                  const SizedBox(height: 16),
-                  // Cho trình quản lý mật khẩu điền (DESIGN.md 15.5; WCAG 3.3.8)
-                  AutofillGroup(
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: _username,
-                          decoration: const InputDecoration(labelText: 'Tên đăng nhập'),
-                          autocorrect: false,
-                          autofillHints: const [AutofillHints.username],
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _password,
-                          decoration: const InputDecoration(labelText: 'Mật khẩu'),
-                          obscureText: true,
-                          autofillHints: const [AutofillHints.password],
-                        ),
-                      ],
+    return AuthLayout(
+      children: [
+        if (widget.notice != null) ...[AuthMessage(widget.notice!), const SizedBox(height: 16)],
+        if (_resetDone) ...[
+          const AuthMessage('Đã đặt mật khẩu mới. Đăng nhập bằng mật khẩu mới.'),
+          const SizedBox(height: 16),
+        ],
+        // Cho trình quản lý mật khẩu điền (DESIGN.md 15.5; WCAG 3.3.8)
+        AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AuthField(
+                label: 'Tên đăng nhập',
+                child: TextField(
+                  key: LoginScreen.usernameKey,
+                  controller: _username,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.username],
+                  style: authInputStyle,
+                  decoration: authInputDecoration(context, hint: 'Nhập tên đăng nhập', icon: LucideIcons.userRound),
+                ),
+              ),
+              const SizedBox(height: 16),
+              AuthField(
+                label: 'Mật khẩu',
+                child: TextField(
+                  key: LoginScreen.passwordKey,
+                  controller: _password,
+                  obscureText: !_showPassword,
+                  textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.password],
+                  onSubmitted: (_) => _submit(),
+                  style: authInputStyle,
+                  decoration: authInputDecoration(
+                    context,
+                    hint: 'Nhập mật khẩu',
+                    icon: LucideIcons.lock,
+                    suffix: IconButton(
+                      tooltip: _showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
+                      icon: Icon(_showPassword ? LucideIcons.eyeOff : LucideIcons.eye, size: 20),
+                      onPressed: () => setState(() => _showPassword = !_showPassword),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  FilledButton(onPressed: _busy ? null : _submit, child: const Text('Đăng nhập')),
-                  if (_resetAvailable) TextButton(onPressed: _forgot, child: const Text('Quên mật khẩu')),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: widget.residentLogin)),
-                    child: const Text('Người cao tuổi: quét mã QR'),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
-      ),
+        if (_resetAvailable) AuthLink(label: 'Quên mật khẩu?', onPressed: _forgot) else const SizedBox(height: 48),
+        if (_error != null) ...[AuthMessage(_error!, error: true), const SizedBox(height: 12)],
+        const SizedBox(height: 10),
+        AuthPrimaryButton(label: 'Đăng nhập', width: 244, busy: _busy, busyLabel: 'Đang đăng nhập', onPressed: _submit),
+        const SizedBox(height: 8),
+        AuthLink(
+          label: 'Quét mã QR cho người cao tuổi',
+          alignment: Alignment.center,
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: widget.residentLogin)),
+        ),
+      ],
     );
   }
 }

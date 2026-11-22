@@ -1,22 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/auth/secure_store.dart';
 import '../../common/format/date_time.dart';
 import '../../common/notifications/notification_api.dart';
 import '../../common/notifications/push_coordinator.dart';
+import '../../common/theme/app_theme.dart';
 import '../channel/channel_screens.dart';
 import '../feedback/resident_feedback_screen.dart';
 import '../notifications/resident_notifications_screen.dart';
 import '../sos/sos_button.dart';
 
-const _weekdays = ['thứ Hai', 'thứ Ba', 'thứ Tư', 'thứ Năm', 'thứ Sáu', 'thứ Bảy', 'Chủ nhật'];
+const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'];
 
-/// "Hôm nay, thứ Hai, 19/10/2026" theo giờ Việt Nam (DESIGN.md 15.6; mobile/README.md luật 4).
-String todayTitle(DateTime now) {
+/// Ngày dưới tiêu đề Hôm nay, theo giờ Việt Nam (DESIGN.md 15.6).
+String _todayDate(DateTime now) {
   final vn = now.toUtc().add(const Duration(hours: 7));
-  String two(int n) => n.toString().padLeft(2, '0');
-  return 'Hôm nay, ${_weekdays[vn.weekday - 1]}, ${two(vn.day)}/${two(vn.month)}/${vn.year}';
+  return '${_weekdays[vn.weekday - 1]}, ${formatDateTime(now).split(' ').first}';
 }
 
 /// Màn đầu "Hôm nay" của người cao tuổi (DESIGN.md 15.6; 012 T070, T071): thẻ lớn một cột, mỗi thẻ hiện việc gần nhất
@@ -121,6 +123,11 @@ class _TodayScreenState extends State<TodayScreen> {
     return lines.isEmpty ? 'Hôm nay chưa có lịch' : lines.first;
   }
 
+  String? get _nextLine {
+    final today = _today;
+    return today == null ? null : nextTodayLine(today, widget.now ?? DateTime.now());
+  }
+
   String? get _activityLine {
     final items = _activities?['items'] as List<dynamic>?;
     if (_activities == null) return null;
@@ -153,24 +160,67 @@ class _TodayScreenState extends State<TodayScreen> {
     return _menu!['available'] != true || items.isEmpty ? 'Chưa có thực đơn' : null;
   }
 
-  Widget _card(String title, String? line, VoidCallback onTap) {
-    final text = Theme.of(context).textTheme;
+  Widget _card(IconData icon, String title, String? line, VoidCallback onTap) {
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
+    final colors = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
         clipBehavior: Clip.antiAlias,
-        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          side: BorderSide(color: colors.outline),
+        ),
         child: InkWell(
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 82),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
               children: [
-                Text(title, style: text.titleLarge),
-                if (line != null) ...[const SizedBox(height: 4), Text(line, style: text.bodyLarge)],
+                Icon(icon, color: colors.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title, style: text.titleMedium),
+                      if (line != null) ...[const SizedBox(height: 4), Text(line, style: text.bodyLarge)],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(LucideIcons.chevronRight, color: colors.primary),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Khối "Sắp tới" đầu màn (spec 2026-11-20 mục 7): việc gần giờ hiện tại nhất, chữ lớn, không bấm.
+  Widget _upcoming(String line) {
+    final theme = Theme.of(context);
+    return Padding(
+      key: const ValueKey('sap-toi'),
+      padding: const EdgeInsets.only(bottom: 16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Sắp tới', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(line, style: theme.textTheme.headlineSmall),
+            ],
           ),
         ),
       ),
@@ -186,31 +236,83 @@ class _TodayScreenState extends State<TodayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
+    final tones = theme.extension<Tones>()!;
     final unread = _unread;
     final api = widget.api;
     final screen = Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(todayTitle(widget.now ?? DateTime.now()), style: text.headlineMedium),
-              const SizedBox(height: 16),
-              _card(
-                'Thông báo',
-                unread == null ? null : (unread > 0 ? '$unread thông báo chưa xem' : 'Không có thông báo mới'),
-                _openNotifications,
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ColoredBox(
+              color: tones.header,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Semantics(
+                        header: true,
+                        child: Text('Hôm nay', style: text.headlineMedium?.copyWith(color: tones.headerInkStrong)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _todayDate(widget.now ?? DateTime.now()),
+                        style: text.bodySmall?.copyWith(color: tones.headerInk),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              _card('Lịch hôm nay', _scheduleLine, () => _open(ScheduleScreen(api: api))),
-              _card('Bữa ăn', _menuLine, () => _open(MenuScreen(api: api))),
-              _card('Hoạt động', _activityLine, () => _open(ActivitiesScreen(api: api))),
-              _card('Người đến thăm', _visitLine, () => _open(VisitsScreen(api: api))),
-              _card('Đồ của tôi', _belongingLine, () => _open(BelongingsScreen(api: api))),
-              _card('Góp ý với viện', null, () => _open(ResidentFeedbackScreen(api: api))),
-            ],
-          ),
+            ),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_nextLine case final next?) _upcoming(next),
+                      _card(
+                        LucideIcons.calendarDays,
+                        'Lịch hôm nay',
+                        _scheduleLine,
+                        () => _open(ScheduleScreen(api: api)),
+                      ),
+                      _card(LucideIcons.utensils, 'Bữa ăn', _menuLine, () => _open(MenuScreen(api: api))),
+                      _card(LucideIcons.activity, 'Hoạt động', _activityLine, () => _open(ActivitiesScreen(api: api))),
+                      _card(LucideIcons.usersRound, 'Người đến thăm', _visitLine, () => _open(VisitsScreen(api: api))),
+                      _card(
+                        LucideIcons.shoppingBag,
+                        'Đồ của tôi',
+                        _belongingLine,
+                        () => _open(BelongingsScreen(api: api)),
+                      ),
+                      _card(
+                        LucideIcons.messageCircle,
+                        'Góp ý với viện',
+                        null,
+                        () => _open(ResidentFeedbackScreen(api: api)),
+                      ),
+                      _card(
+                        LucideIcons.bell,
+                        'Thông báo',
+                        unread == null ? null : (unread > 0 ? '$unread thông báo chưa xem' : 'Không có thông báo mới'),
+                        _openNotifications,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       bottomNavigationBar: SosButton(api: api, store: _store),

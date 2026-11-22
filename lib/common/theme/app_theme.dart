@@ -89,6 +89,24 @@ abstract final class AppTheme {
     textTheme: _textTheme(1, scheme),
     scaffoldBackgroundColor: tones.canvas,
     extensions: [tones],
+    navigationBarTheme: NavigationBarThemeData(
+      height: 70,
+      elevation: 0,
+      backgroundColor: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: scheme.secondaryContainer,
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => _textTheme(1, scheme).labelMedium?.copyWith(
+          color: states.contains(WidgetState.selected) ? scheme.primary : scheme.onSurfaceVariant,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          size: 20,
+          color: states.contains(WidgetState.selected) ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+        ),
+      ),
+    ),
     // Mục 6: bề mặt trắng viền 1px đường kẻ, không đổ bóng, bo 12
     cardTheme: CardThemeData(
       color: scheme.surface,

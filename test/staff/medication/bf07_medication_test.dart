@@ -10,7 +10,7 @@ import 'package:mobile/staff/medication/medication_round_screen.dart';
 import '../../support/fake_backend.dart';
 import 'medication_fixtures.dart';
 
-// Sửa BF-07 (Q-426 → Q-436): thuốc gia đình gửi (kiểm tra tiếp nhận, hoàn trả kèm người chứng kiến), Hoãn, Nhận liều,
+// Sửa BF-07 (Q-427 → Q-437): thuốc gia đình gửi (kiểm tra tiếp nhận, hoàn trả kèm người chứng kiến), Hoãn, Nhận liều,
 // chỉ số đo trước khi dùng, ghi "đã dùng muộn" cho liều Bỏ lỡ bằng bản đính chính.
 
 Future<void> settle(WidgetTester tester) async {

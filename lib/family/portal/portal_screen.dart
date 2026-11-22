@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
+import '../../common/residents/resident_avatar.dart';
+import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/status_pill.dart';
 import '../admissions/change_confirmation_screen.dart';
 import '../admissions/change_request_history_screen.dart';
@@ -13,7 +16,7 @@ import '../charges/purchase_consent_screen.dart';
 import '../visits/visit_registration_screen.dart';
 import 'family_activities_screen.dart';
 
-const _statusLabels = {
+const familyStatusLabels = {
   'ADMISSION_IN_PROGRESS': ('Đang tiếp nhận', StatusTone.attention),
   'IN_RESIDENCE': ('Đang lưu trú', StatusTone.settled),
   'TEMPORARILY_ABSENT': ('Tạm vắng', StatusTone.attention),
@@ -36,7 +39,7 @@ const _sections = [
   ('medical-appointments', 'Lịch khám bên ngoài'),
 ];
 
-const _healthLock = 'Thông tin sức khỏe chỉ hiện với người thân được người cao tuổi đồng ý chia sẻ.';
+const familyHealthLock = 'Thông tin sức khỏe chỉ hiện với người thân được người cao tuổi đồng ý chia sẻ.';
 
 /// Phần cổng trên app người thân (012 T028; US5, FR-046 → FR-048; Q-305 cùng chức năng với cổng web): người cao tuổi có
 /// quan hệ Hiệu lực kèm quyền có tác dụng; thông tin chung; Sức khỏe chỉ khi quyền có tác dụng (mỗi lần mở được viện ghi
@@ -87,16 +90,25 @@ class _PortalScreenState extends State<PortalScreen> {
       );
     }
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(16),
       children: [
         for (final r in residents)
-          ListTile(
-            minTileHeight: 64,
-            title: Text(r['fullName'] as String),
-            subtitle: Text(r['representative'] == true ? 'Bạn là người đại diện' : 'Người thân'),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => ResidentPortalScreen(api: widget.api, resident: r),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                minTileHeight: 96,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                leading: ResidentAvatar(name: r['fullName'] as String, id: r['residentId'] as int, size: 56),
+                title: Text(r['fullName'] as String, style: text.titleLarge),
+                subtitle: Text(r['representative'] == true ? 'Bạn là người đại diện' : 'Người thân'),
+                trailing: const Icon(LucideIcons.chevronRight),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ResidentPortalScreen(api: widget.api, resident: r),
+                  ),
+                ),
               ),
             ),
           ),
@@ -148,8 +160,10 @@ class _ResidentPortalScreenState extends State<ResidentPortalScreen> {
     final theme = Theme.of(context);
     final g = _general;
     final name = widget.resident['fullName'] as String;
+    final status = g?['status'];
+    final (statusLabel, statusTone) = familyStatusLabels[status] ?? ('$status', StatusTone.neutral);
     return Scaffold(
-      appBar: AppBar(title: Text(name)),
+      appBar: headerAppBar(context, title: name),
       body: _error != null
           ? Padding(padding: const EdgeInsets.all(16), child: Text(_error!))
           : g == null
@@ -157,16 +171,26 @@ class _ResidentPortalScreenState extends State<ResidentPortalScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text(g['fullName'] as String, style: theme.textTheme.titleLarge),
-                if (g['location'] != null) Text(g['location'] as String, style: theme.textTheme.bodyMedium),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Builder(
-                    builder: (_) {
-                      final (label, tone) = _statusLabels[g['status']] ?? ('${g['status']}', StatusTone.neutral);
-                      return StatusPill(label: label, tone: tone);
-                    },
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        ResidentAvatar(name: g['fullName'] as String, id: _residentId, size: 56),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(g['fullName'] as String, style: theme.textTheme.titleLarge),
+                              if (g['location'] != null)
+                                Text(g['location'] as String, style: theme.textTheme.bodyMedium),
+                              StatusPill(label: statusLabel, tone: statusTone),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -224,7 +248,7 @@ class _ResidentPortalScreenState extends State<ResidentPortalScreen> {
                     child: const Text('Xem sức khỏe'),
                   )
                 else
-                  Text(_healthLock, style: theme.textTheme.bodySmall),
+                  Text(familyHealthLock, style: theme.textTheme.bodySmall),
                 if (_right('VIEW_COSTS')) ...[
                   const SizedBox(height: 8),
                   OutlinedButton(
@@ -349,7 +373,7 @@ class _HealthScreenState extends State<HealthScreen> {
     try {
       result = (await widget.api.get('/family-portal/residents/${widget.residentId}/health/$section'))!;
     } on ApiProblem catch (e) {
-      result = e.status == 403 ? _healthLock : backendMessage(e);
+      result = e.status == 403 ? familyHealthLock : backendMessage(e);
     } on Exception catch (e) {
       result = backendMessage(e);
     }

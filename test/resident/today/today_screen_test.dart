@@ -86,6 +86,9 @@ void main() {
   testWidgets('FR_083_cardsShowNearestItem', (tester) async {
     await pumpToday(tester, channel().client());
 
+    expect(find.text('Hôm nay'), findsOneWidget);
+    expect(find.text('Thứ Sáu, 06/11/2026'), findsOneWidget);
+
     for (final title in ['Lịch hôm nay', 'Bữa ăn', 'Hoạt động', 'Người đến thăm', 'Đồ của tôi', 'Góp ý với viện']) {
       expect(find.text(title), findsOneWidget, reason: title);
     }
@@ -123,5 +126,35 @@ void main() {
     await openCard(tester, 'Lịch hôm nay');
     expect(find.text('10:00 Tập dưỡng sinh'), findsOneWidget);
     expect(find.text('15:00 Lê M, Lê Bé đến thăm'), findsOneWidget);
+  });
+
+  // Khối "Sắp tới" đầu màn (spec 2026-11-20 mục 7): việc gần giờ hiện tại nhất trong lịch hôm nay; việc đã qua không hiện.
+  Future<void> pumpAt(WidgetTester tester, DateTime now) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.resident(Brightness.light),
+        home: TodayScreen(api: channel().client(), now: now),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('sapToi_viecGanNhat', (tester) async {
+    await pumpAt(tester, DateTime.utc(2026, 11, 6, 1)); // 08:00
+    final block = find.ancestor(of: find.text('Sắp tới'), matching: find.byKey(const ValueKey('sap-toi')));
+    expect(block, findsOneWidget);
+    expect(find.descendant(of: block, matching: find.text('10:00 Tập dưỡng sinh')), findsOneWidget);
+  });
+
+  testWidgets('sapToi_boQuaViecDaQua', (tester) async {
+    await pumpAt(tester, DateTime.utc(2026, 11, 6, 4)); // 11:00
+    final block = find.byKey(const ValueKey('sap-toi'));
+    expect(find.descendant(of: block, matching: find.text('15:00 Lê M, Lê Bé đến thăm')), findsOneWidget);
+    expect(find.descendant(of: block, matching: find.text('10:00 Tập dưỡng sinh')), findsNothing);
+  });
+
+  testWidgets('sapToi_hetViec_khongHien', (tester) async {
+    await pumpAt(tester, DateTime.utc(2026, 11, 6, 12)); // 19:00
+    expect(find.byKey(const ValueKey('sap-toi')), findsNothing);
   });
 }

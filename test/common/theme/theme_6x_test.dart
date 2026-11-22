@@ -68,6 +68,8 @@ void main() {
   List<String>? hints(WidgetTester tester, String label) =>
       tester.widget<TextField>(find.widgetWithText(TextField, label)).autofillHints?.toList();
 
+  List<String>? keyHints(WidgetTester tester, Key key) => tester.widget<TextField>(find.byKey(key)).autofillHints?.toList();
+
   testWidgets('dangNhap_trongAutofillGroup_coGoiY', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -76,8 +78,8 @@ void main() {
       ),
     );
     expect(find.byType(AutofillGroup), findsOneWidget);
-    expect(hints(tester, 'Tên đăng nhập'), [AutofillHints.username]);
-    expect(hints(tester, 'Mật khẩu'), [AutofillHints.password]);
+    expect(keyHints(tester, LoginScreen.usernameKey), [AutofillHints.username]);
+    expect(keyHints(tester, LoginScreen.passwordKey), [AutofillHints.password]);
   });
 
   testWidgets('doiMatKhau_trongAutofillGroup_matKhauMoi', (tester) async {

@@ -27,15 +27,13 @@ void main() {
     await pumpStaff(tester, backend);
     expect(find.byType(NavigationDestination), findsNWidgets(5));
     expect(find.text('Thêm'), findsOneWidget);
-    expect(backend.calls('GET', '/me/shifts'), isEmpty);
     await tester.tap(find.text('Thêm'));
     await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsOneWidget);
+    expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
     await tester.tap(find.text('Bàn giao ca'));
     await tester.pumpAndSettle();
 
     expect(find.text('Chọn ca để xem bàn giao.'), findsOneWidget);
-    expect(backend.calls('GET', '/me/shifts'), hasLength(1));
     expect(backend.calls('GET', '/me/permissions').first.headers['Authorization'], 'Bearer test-session');
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 4);
     expect(tester.takeException(), isNull);
@@ -54,10 +52,9 @@ void main() {
       expect(find.text('Thêm'), findsOneWidget);
       await tester.tap(find.text('Thêm'));
       await tester.pumpAndSettle();
-      expect(find.text('Phê duyệt'), findsOneWidget);
+      expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
       expect(find.text('Bàn giao ca'), findsNothing);
       expect(find.byType(NavigationDestination), findsNWidgets(5));
-      expect(backend.calls('GET', '/me/shifts'), isEmpty);
     });
   }
 

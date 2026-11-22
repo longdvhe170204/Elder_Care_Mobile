@@ -68,12 +68,14 @@ Map<String, dynamic> residentUser({bool mustChangePassword = false}) => {
   'mustChangePassword': mustChangePassword,
 };
 
-/// Người dùng của `/me`, `/auth/login` theo loại tài khoản (`STAFF`, `FAMILY_MEMBER`, `RESIDENT`).
-Map<String, dynamic> user(String type, {bool mustChangePassword = false}) => {
+/// Người dùng của `/me`, `/auth/login` theo loại tài khoản (`STAFF`, `FAMILY_MEMBER`, `RESIDENT`). Nhân viên mặc định có
+/// vai trò Điều dưỡng (`AC-04`) để vào được phần nhân viên (điều hướng theo vai trò, spec 2026-11-20); test cần vai trò
+/// khác truyền [roles].
+Map<String, dynamic> user(String type, {bool mustChangePassword = false, List<String>? roles}) => {
   'accountId': 7,
   'type': type,
   'fullName': '[Họ tên 1]',
-  'roles': <String>[],
+  'roles': roles ?? (type == 'STAFF' ? ['AC-04'] : <String>[]),
   'mustChangePassword': mustChangePassword,
 };
 
@@ -92,7 +94,7 @@ OfflineQueue memoryQueue(SessionController s) {
 
 /// Máy chưa gắn tài khoản người cao tuổi mở màn đăng nhập chung: bấm nút người cao tuổi để tới màn quét mã.
 Future<void> openResidentLogin(WidgetTester tester) async {
-  final choice = find.text('Người cao tuổi: quét mã QR');
+  final choice = find.text('Quét mã QR cho người cao tuổi');
   if (choice.evaluate().isEmpty) return;
   await tester.tap(choice);
   await tester.pumpAndSettle();
