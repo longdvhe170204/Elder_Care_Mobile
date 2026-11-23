@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../common/api/api_client.dart';
 import '../../common/format/date_time.dart';
 import '../../common/notifications/notification_api.dart';
+import '../../common/widgets/header_app_bar.dart';
 import '../staff_navigation.dart';
 
 const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'];
@@ -95,7 +96,7 @@ class _ShiftHomeScreenState extends State<ShiftHomeScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => Scaffold(
-          appBar: AppBar(title: Text(title)),
+          appBar: headerAppBar(context, title: title),
           body: widget.open(name),
         ),
       ),

@@ -195,9 +195,10 @@ class _StaffRootState extends State<StaffRoot> {
         : null,
   );
 
-  Widget _handover() => HandoverScreen(
+  Widget _handover({VoidCallback? onDone}) => HandoverScreen(
     api: _session.api,
     cache: _session.user == null ? null : HandoverCache(_session.store, _accountId),
+    onDone: onDone,
   );
 
   (String, IconData, Widget Function()) _primary(StaffPrimary primary) => switch (primary) {
@@ -287,7 +288,19 @@ class _StaffRootState extends State<StaffRoot> {
   /// Hai nhóm của "Thêm" (Figma `5:603`): việc trong ca rồi công cụ.
   (List<_Item>, List<_Item>) _moreGroups(StaffNavigation nav) => (
     [
-      if (nav.showHandover) ('Bàn giao ca', null, LucideIcons.arrowLeftRight, _handover),
+      if (nav.showHandover)
+        (
+          'Bàn giao ca',
+          null,
+          LucideIcons.arrowLeftRight,
+          // Mở từ "Thêm" thì "Về Ca của tôi" đóng mục Thêm và về tab Ca của tôi.
+          () => _handover(
+            onDone: () => setState(() {
+              _more = null;
+              _tab = StaffTab.shift;
+            }),
+          ),
+        ),
       for (final f in nav.work) _feature(f),
     ],
     [for (final f in nav.tools) _feature(f)],
