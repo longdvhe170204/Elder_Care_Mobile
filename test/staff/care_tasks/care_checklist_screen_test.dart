@@ -110,13 +110,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Người kiểm thử · Phòng A · Giường 1 · 10:00'), findsOneWidget);
     await open(tester, 'Hỗ trợ uống nước');
+    // Figma 192:1752: tiêu đề "Chi tiết công việc", tên việc nằm trong khối Hướng dẫn chăm sóc.
+    expect(find.text('Chi tiết công việc'), findsOneWidget);
+    expect(find.text('Hỗ trợ uống nước'), findsOneWidget);
+    expect(find.text('NT'), findsOneWidget);
     expect(find.text('Phòng A · Giường 1'), findsOneWidget);
-    expect(find.text('Khung giờ: 09:45–10:15'), findsOneWidget);
-    expect(find.text('Dự kiến: 01/11/2026 10:00'), findsOneWidget);
+    expect(find.text('Quá hạn'), findsOneWidget);
     expect(find.text('Quan trọng'), findsOneWidget);
-    expect(find.text('Nguồn: Kế hoạch chăm sóc'), findsOneWidget);
-    expect(find.text('Phụ trách: Nhân viên kiểm thử'), findsOneWidget);
     expect(find.text('Tồn, chờ xác nhận bàn giao'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Lưu ý: Ngồi thẳng'), 200);
+    await tester.scrollUntilVisible(find.text('Nguồn: Kế hoạch chăm sóc · Phụ trách: Nhân viên kiểm thử'), 200);
+    expect(find.text('Dự kiến'), findsOneWidget);
+    expect(find.text('01/11/2026 10:00'), findsOneWidget);
+    expect(find.text('Khung giờ'), findsOneWidget);
+    expect(find.text('09:45–10:15'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets('FR_034_sleepFormUsesResultCatalogAndStoresMinutesWithQuality', (tester) async {
@@ -137,7 +144,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Thời gian ngủ (phút)'), '60');
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '60');
     await tester.tap(find.text('Ngủ yên'));
     await tester.ensureVisible(find.text('Lưu kết quả'));
     await tester.tap(find.text('Lưu kết quả'));
@@ -181,7 +188,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
     await tester.ensureVisible(find.text('Lưu kết quả'));
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
@@ -235,14 +242,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
-    expect(gateway.recordings.single, {'numericValue': 200});
+    expect(gateway.recordings.single, {'numericValue': 200, 'performedAt': isA<String>()});
     expect(find.text('200'), findsOneWidget);
     expect(find.text('Công việc đã được ghi nhận.'), findsOneWidget);
   });
-  testWidgets('FR_035_guiGioThucHienTheoGioVietNam', (tester) async {
+  // Không còn ô thời điểm thực hiện: thời điểm là lúc bấm Lưu kết quả.
+  testWidgets('FR_035_thoiDiemThucHienLayLucBamLuu', (tester) async {
     gateway.body['tasks'] = [
       {
         'id': 1,
@@ -257,14 +265,50 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ghi nhận kết quả'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Thời điểm thực hiện (dd/MM/yyyy HH:mm)'),
-      '01/11/2026 10:15',
-    );
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
+    expect(find.textContaining('Thời điểm thực hiện'), findsNothing);
+    expect(find.text('Ghi chú kết quả'), findsOneWidget);
+    final before = DateTime.now().toUtc().subtract(const Duration(seconds: 1));
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
-    expect(gateway.recordings.single, {'numericValue': 200, 'performedAt': '2026-11-01T03:15:00.000Z'});
+    final at = DateTime.parse(gateway.recordings.single['performedAt'] as String);
+    expect(at.isUtc, isTrue);
+    expect(at.isBefore(before), isFalse);
+    expect(at.isAfter(DateTime.now().toUtc().add(const Duration(seconds: 1))), isFalse);
+    expect(gateway.recordings.single['numericValue'], 200);
+  });
+  // Q-446: việc đã Hoàn thành trong ca còn diễn ra, backend cho lệnh reRecord: Ghi nhận lại cần lý do, gửi đính chính.
+  testWidgets('Q_446_ghiNhanLaiTrongCa_canLyDo_guiDinhChinh', (tester) async {
+    gateway.body['tasks'] = [
+      {
+        'id': 5,
+        'taskType': 'Uống nước đã ghi',
+        'resultType': 'ML',
+        'status': 'COMPLETED',
+        'allowedCommands': ['reRecord'],
+      },
+    ];
+    await view(tester);
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Ghi nhận kết quả'), findsNothing);
+    await tester.tap(find.text('Ghi nhận lại'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lý do ghi nhận lại (bắt buộc)'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '250');
+    await tester.tap(find.text('Lưu ghi nhận lại'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nhập lý do ghi nhận lại.'), findsOneWidget);
+    expect(gateway.reRecordings, isEmpty);
+    await tester.enterText(find.byKey(const ValueKey('careResult.reason')), 'Ghi nhầm lượng nước');
+    await tester.tap(find.text('Lưu ghi nhận lại'));
+    await tester.pumpAndSettle();
+    expect(gateway.reRecordings.single.sublist(0, 3), [
+      5,
+      {'numericValue': 250},
+      'Ghi nhầm lượng nước',
+    ]);
+    expect(gateway.recordings, isEmpty);
   });
   testWidgets('BR_M15_20_doiTaiKhoanXoaHienThiCuVaBoResponseCu', (tester) async {
     await view(tester);
@@ -346,13 +390,13 @@ void main() {
       expect(find.text('Báo sự cố'), findsNothing);
     });
 
-    testWidgets('chiTietCongViec_xemKeHoachVaBaoSuCoCuaNguoiCaoTuoi', (tester) async {
+    testWidgets('chiTietCongViec_baoSuCoCuaNguoiCaoTuoi_khongConXemKeHoach', (tester) async {
       await withLinks(tester);
       await open(tester, 'Việc đến hạn');
-      await tester.tap(find.text('Xem kế hoạch chăm sóc'));
+      expect(find.text('Xem kế hoạch chăm sóc'), findsNothing);
       await tester.tap(find.text('Báo sự cố'));
       await tester.pumpAndSettle();
-      expect(opened, ['plans:77 Người kiểm thử', 'incident:77']);
+      expect(opened, ['incident:77']);
     });
 
     testWidgets('dongBanGiao_moManBanGiaoCuaCa', (tester) async {

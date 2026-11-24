@@ -8,7 +8,6 @@ import '../../common/format/date_time.dart';
 import '../../common/theme/app_theme.dart';
 import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/page_body.dart';
-import '../../common/widgets/status_pill.dart';
 import '../alerts/alert_follow_up_screen.dart';
 import '../alerts/alert_labels.dart';
 import '../medication/dose_sheet.dart';
@@ -30,7 +29,7 @@ String careCommandKey() {
 }
 
 /// Nhận accountId/shiftId từ shell của A; không tự chọn một ca hoặc một tài khoản giả.
-/// `links`: có thì khung chi tiết công việc có Xem kế hoạch chăm sóc, Báo sự cố và dòng bàn giao mở được màn Bàn giao ca.
+/// `links`: có thì khung chi tiết công việc có Báo sự cố và dòng bàn giao mở được màn Bàn giao ca.
 class CareChecklistScreen extends StatefulWidget {
   const CareChecklistScreen({
     super.key,
@@ -152,14 +151,6 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
 
   Future<void> openHandover() => widget.links!.openHandover(context, widget.shiftId);
 
-  /// Kế hoạch chăm sóc của người cao tuổi của công việc (trước ở dải Tiến trình ca, nay ở khung chi tiết).
-  Future<void> openPlan(Map<String, dynamic> task) => widget.links!.openPlans(context, [
-    {
-      'id': task['residentId'],
-      'name': (task['residentCard'] as Map?)?['fullName'] ?? 'Người cao tuổi ${task['residentId']}',
-    },
-  ]);
-
   /// Trả `true` khi đã nhận việc để khung chi tiết đóng lại, checklist tải mới.
   Future<bool> claim(Map<String, dynamic> task) async {
     setState(() => busy = true);
@@ -193,18 +184,16 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     return saved == true;
   }
 
-  Future<bool> record(Map<String, dynamic> task) async {
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => CareResultForm(
-        task: task,
-        repository: widget.repository,
-        newKey: careCommandKey,
-        resultValues: (loaded!.snapshot.content['resultValues'] as List? ?? [])
-            .map((v) => Map<String, dynamic>.from(v as Map))
-            .toList(),
-      ),
+  Future<bool> record(Map<String, dynamic> task, {bool reRecord = false}) async {
+    final saved = await showCareResultDialog(
+      context,
+      task: task,
+      repository: widget.repository,
+      newKey: careCommandKey,
+      resultValues: (loaded!.snapshot.content['resultValues'] as List? ?? [])
+          .map((v) => Map<String, dynamic>.from(v as Map))
+          .toList(),
+      reRecord: reRecord,
     );
     if (saved == true && mounted) await load();
     return saved == true;
@@ -245,9 +234,12 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
           ],
           onRecord: canWrite && commands.contains('record') && !pending ? () => record(task) : null,
           onClaim: loaded?.offline == false && commands.contains('claim') ? () => claim(task) : null,
+      // Q-446: ghi nhận lại kết quả đã ghi khi ca còn diễn ra; chỉ trực tuyến vì là bản đính chính.
+      onReRecord: loaded?.offline == false && commands.contains('reRecord')
+          ? () => record(task, reRecord: true)
+          : null,
           onNotPerform: canWrite && commands.contains('notPerform') && !pending ? () => notPerform(task) : null,
           onReport: widget.links != null && task['residentId'] != null ? () => report(task['residentId'] as int) : null,
-          onPlan: widget.links != null && task['residentId'] != null ? () => openPlan(task) : null,
     );
   }
 
@@ -579,8 +571,10 @@ class _ChecklistRow extends StatelessWidget {
   }
 }
 
-/// Chi tiết một công việc mở từ dòng checklist: ngữ cảnh (FR-030), nhãn Đang theo dõi, thỏa thuận lựa chọn có rủi ro và
-/// các lệnh backend cho phép. Ghi nhận, Không thực hiện, Nhận việc xong thì đóng về checklist đã tải mới.
+/// Chi tiết một công việc mở từ dòng checklist (Figma 192:1752 "Chi tiết công việc"): nhãn trạng thái, thẻ người cao
+/// tuổi, hướng dẫn chăm sóc, lịch thực hiện, Đang theo dõi, lựa chọn đã thỏa thuận, khối Thao tác khác và nút Ghi nhận
+/// kết quả cố định cuối màn. Chỉ hiện lệnh backend cho phép; ghi nhận, không thực hiện, nhận việc xong thì đóng về
+/// checklist đã tải mới.
 class _TaskDetail extends StatefulWidget {
   const _TaskDetail({
     required this.task,
@@ -590,9 +584,9 @@ class _TaskDetail extends StatefulWidget {
     required this.agreements,
     required this.onRecord,
     required this.onClaim,
+    this.onReRecord,
     required this.onNotPerform,
     required this.onReport,
-    required this.onPlan,
   });
 
   final Map<String, dynamic> task;
@@ -602,9 +596,9 @@ class _TaskDetail extends StatefulWidget {
   final List<String> agreements;
   final Future<bool> Function()? onRecord;
   final Future<bool> Function()? onClaim;
+  final Future<bool> Function()? onReRecord;
   final Future<bool> Function()? onNotPerform;
   final Future<void> Function()? onReport;
-  final Future<void> Function()? onPlan;
 
   @override
   State<_TaskDetail> createState() => _TaskDetailState();
@@ -624,69 +618,382 @@ class _TaskDetailState extends State<_TaskDetail> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tones = theme.extension<Tones>()!;
+    final text = theme.textTheme;
     final task = widget.task;
+    final card = task['residentCard'] as Map?;
+    final status = task['status'] as String?;
+    final importance = const {'IMPORTANT': 'Quan trọng', 'MANDATORY': 'Bắt buộc'}[task['importance']];
+    final carryover = const {
+      'FROM_PREVIOUS_SHIFT': 'Tồn từ ca trước',
+      'AWAITING_CONFIRMATION': 'Tồn, chờ xác nhận bàn giao',
+    }[task['carryover']];
+    final source = CareTaskContext.sources[(task['basis'] as Map?)?['type']];
+    final planned = task['plannedAt'] as String?;
+    final from = task['windowFrom'] as String?, to = task['windowTo'] as String?;
+    final muted = text.bodySmall?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500);
+    final heading = text.titleSmall?.copyWith(fontWeight: FontWeight.w700);
+
+    // Nút cuối màn là lệnh chính còn được phép: Ghi nhận kết quả, rồi Ghi nhận lại (Q-446), rồi Nhận công việc.
+    final primary = widget.onRecord != null
+        ? ('Ghi nhận kết quả', widget.onRecord!)
+        : widget.onReRecord != null
+        ? ('Ghi nhận lại', widget.onReRecord!)
+        : widget.onClaim != null
+        ? ('Nhận công việc', widget.onClaim!)
+        : null;
+    final actions = <(String, VoidCallback?)>[
+      if (widget.onRecord != null)
+        if (widget.onClaim case final claim?) ('Nhận công việc', busy ? null : () => run(claim)),
+      if (widget.onNotPerform case final notPerform?) ('Không thực hiện được…', busy ? null : () => run(notPerform)),
+      if (widget.onReport case final report?) ('Báo sự cố', report),
+    ];
+
     return Scaffold(
-      appBar: headerAppBar(context, title: task['taskType'] as String? ?? 'Công việc'),
-      body: PageBody(
-        child: ListView(
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: StatusPill(
-                label: _status(task['status'] as String?),
-                tone: task['status'] == 'OVERDUE' ? StatusTone.urgent : StatusTone.neutral,
+      appBar: headerAppBar(context, title: 'Chi tiết công việc'),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _Tag(
+                      label: _status(status),
+                      fill: switch (status) {
+                        'OVERDUE' => scheme.errorContainer,
+                        'DUE' => tones.attentionWash,
+                        _ => scheme.surfaceContainerHighest,
+                      },
+                      ink: switch (status) {
+                        'OVERDUE' => scheme.error,
+                        'DUE' => tones.attentionInk,
+                        _ => scheme.onSurfaceVariant,
+                      },
+                    ),
+                    if (importance != null) _Tag(label: importance, fill: tones.attentionWash, ink: tones.attentionInk),
+                    if (carryover != null) _Tag(label: carryover, fill: tones.occupiedWash, ink: tones.occupiedInk),
+                    if (widget.pending) _Tag(label: 'Chưa đồng bộ', fill: tones.attentionWash, ink: tones.attentionInk),
+                    if (task['awaitingRemeasurementConfirmation'] == true)
+                      _Tag(label: 'Chờ xác nhận đo lại', fill: tones.attentionWash, ink: tones.attentionInk),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _DetailCard(
+                  child: Row(
+                    children: [
+                      _Initials(name: card?['fullName'] as String?),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(card == null ? 'Vị trí' : 'Người cao tuổi', style: muted),
+                            Text(
+                              card?['fullName'] as String? ?? task['location'] as String? ?? 'Công việc tầng/khu',
+                              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            if (card?['roomBed'] case final String roomBed)
+                              Text(roomBed, style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _DetailCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Semantics(header: true, child: Text('Hướng dẫn chăm sóc', style: heading)),
+                      const SizedBox(height: 6),
+                      Text(
+                        task['taskType'] as String? ?? 'Công việc',
+                        style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      if (task['content'] case final String content) Text(content, style: text.bodyLarge),
+                      if (card?['careNotes'] case final String notes) ...[
+                        const SizedBox(height: 6),
+                        Text('Lưu ý: $notes', style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _DetailCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Semantics(header: true, child: Text('Lịch thực hiện', style: heading)),
+                      const SizedBox(height: 4),
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: _Field(
+                                label: 'Dự kiến',
+                                value: planned == null ? '—' : formatDateTime(DateTime.parse(planned)),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              child: VerticalDivider(width: 1, thickness: 1, color: scheme.outlineVariant),
+                            ),
+                            Expanded(
+                              child: _Field(
+                                label: 'Khung giờ',
+                                value: from == null || to == null
+                                    ? '—'
+                                    : '${formatTime(DateTime.parse(from))}–${formatTime(DateTime.parse(to))}',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        [
+                          if (source != null) 'Nguồn: $source',
+                          task['performer'] == null ? 'Chưa ai nhận' : 'Phụ trách: ${task['performer']}',
+                        ].join(' · '),
+                        style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.followingLabel case final label?) ...[
+                  const SizedBox(height: 10),
+                  _DetailCard(
+                    padding: EdgeInsets.zero,
+                    child: InkWell(
+                      onTap: widget.onFollowUps,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                        child: Row(
+                          children: [
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: scheme.errorContainer,
+                                borderRadius: BorderRadius.circular(AppRadius.md),
+                              ),
+                              child: SizedBox.square(
+                                dimension: 36,
+                                child: Icon(LucideIcons.bell, size: 18, color: scheme.error),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Đang theo dõi', style: muted),
+                                  Text(
+                                    label.startsWith('Đang theo dõi: ') ? label.substring(15) : label,
+                                    style: text.bodyMedium?.copyWith(
+                                      color: scheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (widget.onFollowUps != null)
+                              Icon(LucideIcons.chevronRight, size: 20, color: scheme.primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                if (widget.agreements.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _DetailCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Semantics(header: true, child: Text('Lựa chọn đã thỏa thuận', style: heading)),
+                        const SizedBox(height: 4),
+                        for (final choice in widget.agreements) Text(choice, style: text.bodyLarge),
+                      ],
+                    ),
+                  ),
+                ],
+                if (actions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Semantics(header: true, child: Text('Thao tác khác', style: heading)),
+                  const SizedBox(height: 6),
+                  _DetailCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        for (final (i, (label, onTap)) in actions.indexed) ...[
+                          if (i > 0) Divider(height: 1, indent: 14, endIndent: 14, color: scheme.outlineVariant),
+                          InkWell(
+                            onTap: onTap,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 48),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        label,
+                                        style: text.bodyLarge?.copyWith(
+                                          color: onTap == null ? scheme.onSurfaceVariant : scheme.primary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                    Icon(LucideIcons.chevronRight, size: 20, color: scheme.primary),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (primary case (final label, final action))
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                border: Border(top: BorderSide(color: scheme.outlineVariant)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    // Figma "Ghi nhận kết quả · Cố định": nút chữ nhật bo vừa, không bo tròn hẳn.
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+                      ),
+                      onPressed: busy ? null : () => run(action),
+                      child: Text(label),
+                    ),
+                  ),
+                ),
               ),
             ),
-            if (widget.pending) Text('Chưa đồng bộ', style: theme.textTheme.bodyMedium),
-            if (task['awaitingRemeasurementConfirmation'] == true) const Text('Chờ xác nhận đo lại'),
-            const SizedBox(height: 8),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: CareTaskContext(task: task),
-              ),
-            ),
-            if (widget.followingLabel case final label?) ...[
-              const SizedBox(height: 8),
-              if (widget.onFollowUps case final open?)
-                TextButton(
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
-                  onPressed: open,
-                  child: Text('$label ›'),
-                )
-              else
-                Text(label, style: theme.textTheme.bodyMedium),
-            ],
-            if (widget.agreements.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text('Lựa chọn đã thỏa thuận', style: theme.textTheme.titleSmall),
-              for (final choice in widget.agreements) Text(choice),
-            ],
-            const SizedBox(height: 24),
-            if (widget.onRecord case final record?)
-              FilledButton(onPressed: busy ? null : () => run(record), child: const Text('Ghi nhận kết quả')),
-            if (widget.onClaim case final claim?) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(onPressed: busy ? null : () => run(claim), child: const Text('Nhận công việc')),
-            ],
-            if (widget.onNotPerform case final notPerform?) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: busy ? null : () => run(notPerform),
-                child: const Text('Không thực hiện được…'),
-              ),
-            ],
-            if (widget.onPlan case final plan?) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(onPressed: plan, child: const Text('Xem kế hoạch chăm sóc')),
-            ],
-            if (widget.onReport case final report?) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(onPressed: report, child: const Text('Báo sự cố')),
-            ],
-          ],
-        ),
+        ],
       ),
+    );
+  }
+}
+
+/// Khối trắng viền mảnh bo 14 của màn chi tiết (Figma "Người cao tuổi", "Hướng dẫn chăm sóc", "Lịch thực hiện").
+class _DetailCard extends StatelessWidget {
+  const _DetailCard({required this.child, this.padding = const EdgeInsets.all(14)});
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(padding: padding, child: child),
+    );
+  }
+}
+
+/// Nhãn trạng thái nền nhạt bo tròn (Figma "Quá hạn", "Quan trọng", "Tồn từ ca trước").
+class _Tag extends StatelessWidget {
+  const _Tag({required this.label, required this.fill, required this.ink});
+
+  final String label;
+  final Color fill;
+  final Color ink;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: ShapeDecoration(color: fill, shape: const StadiumBorder()),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: ink, fontWeight: FontWeight.w600),
+      ),
+    ),
+  );
+}
+
+/// Ô chữ viết tắt bo góc của người cao tuổi (Figma "Chữ viết tắt"): chữ đầu của họ và của tên gọi.
+class _Initials extends StatelessWidget {
+  const _Initials({required this.name});
+
+  final String? name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final words = (name ?? '').trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final initials = words.isEmpty
+        ? null
+        : (words.length == 1 ? words.first[0] : '${words.first[0]}${words.last[0]}').toUpperCase();
+    return ExcludeSemantics(
+      child: Container(
+        width: 46,
+        height: 46,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(13)),
+        child: initials == null
+            ? Icon(LucideIcons.mapPin, size: 20, color: theme.colorScheme.secondary)
+            : Text(
+                initials,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.secondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Một cột của "Lịch thực hiện": nhãn nhỏ rồi giá trị đậm.
+class _Field extends StatelessWidget {
+  const _Field({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Text(value, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }
