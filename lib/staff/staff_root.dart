@@ -31,7 +31,7 @@ import 'medication/supplied_intake_screen.dart';
 import 'notifications/staff_inbox_screen.dart';
 import 'nutrition/family_food_screen.dart';
 import 'nutrition/meal_slip_screen.dart';
-import 'nutrition/serving_confirmation_screen.dart';
+import 'nutrition/shared_menu_screen.dart';
 import 'pending_review/pending_review_screen.dart';
 import 'resident_login_qr/resident_login_qr_screen.dart';
 import 'residents/resident_lookup_screen.dart';
@@ -225,11 +225,11 @@ class _StaffRootState extends State<StaffRoot> {
       ),
       StaffFeature.incidents => ('Sự cố', 'Danh sách sự cố', LucideIcons.siren, () => IncidentsScreen(api: api)),
       StaffFeature.alerts => ('Cảnh báo', 'Cảnh báo cần xử lý', LucideIcons.bellRing, () => AlertsScreen(api: api)),
-      StaffFeature.servingConfirmation => (
-        'Xác nhận phục vụ suất ăn',
-        null,
+      StaffFeature.sharedMenu => (
+        'Thực đơn',
+        'Thực đơn hôm nay và cả tuần',
         LucideIcons.utensils,
-        () => ServingConfirmationScreen(api: api, queue: widget.queue, accountId: _accountId),
+        () => SharedMenuScreen(api: api),
       ),
       StaffFeature.mealSlipFloor => (
         'Phiếu bữa ăn',

@@ -190,8 +190,9 @@ class _MealSlipScreenState extends State<MealSlipScreen> {
     final text = Theme.of(context).textTheme;
     final id = slip['id'] as int;
     final status = slip['status'] as String;
-    final portions = ((slip['portionsByDiet'] as List?) ?? const []).cast<Map<String, dynamic>>();
-    final labels = (slip['labels'] as List?) ?? const [];
+    final dishes = ((slip['dishes'] as List?) ?? const []).cast<String>();
+    final held = (slip['heldPortionCount'] as int?) ?? 0;
+    final name = slip['group'] == 'STAFF' ? 'Phiếu nhân viên' : '${slip['floorArea']}';
     final supplements = ((slip['supplementaryPortions'] as List?) ?? const []).cast<Map<String, dynamic>>();
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -200,10 +201,11 @@ class _MealSlipScreenState extends State<MealSlipScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${slip['floorArea']}: ${_slipStatus[status] ?? status}', style: text.titleMedium),
+            Text('$name: ${_slipStatus[status] ?? status}', style: text.titleMedium),
             const SizedBox(height: 4),
-            for (final p in portions) Text('${p['diet']}: ${p['portionCount']} suất', style: text.bodyMedium),
-            if (labels.isNotEmpty) Text('Suất đặc biệt: ${labels.length}', style: text.bodyMedium),
+            Text('${slip['portionCount'] ?? 0} suất', style: text.bodyMedium),
+            if (dishes.isNotEmpty) Text('Món: ${dishes.join(', ')}', style: text.bodyMedium),
+            if (held > 0) Text('Suất giữ: $held', style: text.bodyMedium),
             if (status == 'DELIVERED') ...[
               const SizedBox(height: 8),
               if (_reporting == ('slip', id))

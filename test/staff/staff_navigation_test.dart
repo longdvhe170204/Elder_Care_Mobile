@@ -12,7 +12,7 @@ void main() {
     final nav = _nav({'AC-04'}, {'MEDICATION_RECEIPT:CREATE'});
     expect(nav.primary, StaffPrimary.checklist);
     expect(nav.work, contains(StaffFeature.medicationIntake));
-    expect(nav.work, isNot(contains(StaffFeature.servingConfirmation)));
+    expect(nav.work, isNot(contains(StaffFeature.sharedMenu)));
   });
 
   test('dieuDuong_biThuHep_khongTiepNhanThuoc', () {

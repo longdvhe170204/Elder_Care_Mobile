@@ -12,10 +12,10 @@ Map<String, dynamic> slip(String status, {List<Map<String, dynamic>> extra = con
   'floorArea': 'Tầng 1',
   'meal': 'Bữa trưa',
   'status': status,
-  'portionsByDiet': [
-    {'diet': 'Thường', 'portionCount': 4},
-  ],
-  'labels': <Map<String, dynamic>>[],
+  'group': 'FLOOR',
+  'dishes': ['Cá kho', 'Canh rau'],
+  'portionCount': 4,
+  'heldPortionCount': 0,
   'supplementaryPortions': extra,
 };
 
