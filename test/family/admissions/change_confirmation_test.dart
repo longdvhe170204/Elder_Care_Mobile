@@ -46,7 +46,7 @@ void main() {
   testWidgets('FR_043c_hienNoiDungThayDoi_chiPhi_ngayHieuLuc', (tester) async {
     await pump(tester, backend().client());
     expect(find.text('Mức chăm sóc: Cơ bản → Đặc biệt'), findsOneWidget);
-    expect(find.text('Dịch vụ chăm sóc: 3.000.000 đồng → 9.000.000 đồng'), findsOneWidget);
+    expect(find.text('Dịch vụ chăm sóc: 3.000.000 đ → 9.000.000 đ'), findsOneWidget);
     expect(find.text('Từ ngày 01/12/2026'), findsOneWidget);
     expect(find.text('Lý do: Theo đánh giá lại của Bác sĩ'), findsOneWidget);
     expect(find.text('Đồng ý'), findsOneWidget);

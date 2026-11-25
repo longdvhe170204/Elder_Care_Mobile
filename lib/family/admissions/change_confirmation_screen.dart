@@ -26,7 +26,7 @@ String _money(Object? value) {
   if (value is! num) return 'chưa có';
   final digits = value.round().toString();
   final grouped = digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
-  return '$grouped đồng';
+  return '$grouped đ';
 }
 
 String _costItem(Object? item) {
