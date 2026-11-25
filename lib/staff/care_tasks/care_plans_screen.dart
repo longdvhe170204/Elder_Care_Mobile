@@ -117,8 +117,10 @@ class _ResidentPlanState extends State<_ResidentPlan> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Kế hoạch lần ${plan['revision']}'
-                  '${plan['effectiveFrom'] == null ? '' : ', hiệu lực từ ${formatDate(plan['effectiveFrom'] as String)}'}',
+                  // Q-447: không hiện số phiên bản
+                  plan['effectiveFrom'] == null
+                      ? 'Đang hiệu lực'
+                      : 'Hiệu lực từ ${formatDate(plan['effectiveFrom'] as String)}',
                   style: text.titleSmall,
                 ),
                 for (final item in (plan['items'] as List? ?? []).map((i) => Map<String, dynamic>.from(i as Map)))
