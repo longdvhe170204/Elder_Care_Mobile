@@ -20,35 +20,10 @@ const _residenceTypes = {
   'DAY_CARE': 'Bán trú',
 };
 
-const _depositStatus = {
-  'NOT_SATISFIED': 'Chưa đặt cọc',
-  'SATISFIED': 'Đã đặt cọc',
-  'NOT_REQUIRED': 'Không yêu cầu đặt cọc',
-};
-
-// Trạng thái phụ lục (004 FR-043d, FR-043f): Chờ ký tới khi viện ghi nhận bản đã ký
-const _addendumStatus = {
-  'PENDING_SIGNATURE': 'Chờ ký',
-  'PENDING_EFFECTIVE': 'Chờ hiệu lực',
-  'APPLIED': 'Đã áp dụng',
-  'NOT_APPLICABLE': 'Không áp dụng',
-  'CANCELLED': 'Đã hủy',
-};
-
-String _addendumLead(Object? no) => no is int ? 'Phụ lục số ${no.toString().padLeft(2, '0')}, hiệu lực' : 'Hiệu lực';
-
-String _money(Object? value) {
-  final digits = '${value ?? 0}';
-  final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write('.');
-    buffer.write(digits[i]);
-  }
-  return '$buffer đ';
-}
-
-/// Hợp đồng của người cao tuổi mà người đại diện đại diện (004 T038; US3, FR-028 → FR-031): hợp đồng gốc, phụ lục và
-/// trạng thái đặt cọc, chỉ xem (Phụ lục 27: Người thân X). Chỉ trực tuyến. Trường tài chính do backend bỏ theo quyền.
+/// Hợp đồng của những người cao tuổi mà người đại diện đại diện (004 T038; FR-028). Lấy từ cổng người thân
+/// (`GET /family-portal/residents`, rồi `GET /family-portal/residents/{id}/contract`) vì endpoint `/contracts` là của
+/// nhân viên và trả 403 với người thân. Chỉ xem. Phụ lục và đặt cọc của người thân chưa có endpoint trên cổng người
+/// thân (xem danh sách việc còn lại, mục B), nên màn chưa hiện phần đó.
 class ContractScreen extends StatefulWidget {
   const ContractScreen({super.key, required this.api});
 
@@ -70,10 +45,15 @@ class _ContractScreenState extends State<ContractScreen> {
 
   Future<void> _load() async {
     try {
-      final items = (await widget.api.getList('/contracts')).cast<Map<String, dynamic>>();
+      final residents = (await widget.api.getList('/family-portal/residents')).cast<Map<String, dynamic>>();
+      final all = <Map<String, dynamic>>[];
+      for (final resident in residents) {
+        final body = await widget.api.get('/family-portal/residents/${resident['residentId']}/contract') ?? {};
+        all.addAll((body['contracts'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>());
+      }
       if (!mounted) return;
       setState(() {
-        _contracts = items;
+        _contracts = all;
         _error = null;
       });
     } on Exception catch (e) {
@@ -109,50 +89,19 @@ class _ContractScreenState extends State<ContractScreen> {
       padding: const EdgeInsets.all(16),
       itemCount: contracts.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => _ContractCard(key: ValueKey(contracts[i]['id']), api: widget.api, contract: contracts[i]),
+      itemBuilder: (_, i) => _ContractCard(contract: contracts[i]),
     );
   }
 }
 
-class _ContractCard extends StatefulWidget {
-  const _ContractCard({super.key, required this.api, required this.contract});
+class _ContractCard extends StatelessWidget {
+  const _ContractCard({required this.contract});
 
-  final ApiClient api;
   final Map<String, dynamic> contract;
-
-  @override
-  State<_ContractCard> createState() => _ContractCardState();
-}
-
-class _ContractCardState extends State<_ContractCard> {
-  bool _open = false;
-  Map<String, dynamic>? _deposit;
-  List<Map<String, dynamic>>? _addenda;
-  String? _error;
-
-  Future<void> _toggle() async {
-    setState(() => _open = !_open);
-    if (!_open || _addenda != null) return;
-    final id = widget.contract['id'];
-    try {
-      final deposit = await widget.api.get('/contracts/$id/deposit');
-      final addenda = (await widget.api.getList('/contracts/$id/addenda')).cast<Map<String, dynamic>>();
-      if (mounted) {
-        setState(() {
-          _deposit = deposit;
-          _addenda = addenda;
-          _error = null;
-        });
-      }
-    } on Exception catch (e) {
-      if (mounted) setState(() => _error = backendMessage(e));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final contract = widget.contract;
     final (statusLabel, tone) = _contractStatus[contract['status']] ?? ('${contract['status']}', StatusTone.neutral);
     final end = contract['endDate'] as String?;
     return Card(
@@ -176,28 +125,6 @@ class _ContractCardState extends State<_ContractCard> {
               'từ ${formatDate(contract['startDate'] as String)}${end == null ? '' : ' đến ${formatDate(end)}'}',
               style: theme.textTheme.bodyMedium,
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton(onPressed: _toggle, child: Text(_open ? 'Ẩn chi tiết' : 'Xem phụ lục, đặt cọc')),
-            ),
-            if (_open && _error != null) Text(_error!, style: theme.textTheme.bodySmall),
-            if (_open && _addenda != null) ...[
-              const SizedBox(height: 12),
-              Text('Đặt cọc', style: theme.textTheme.titleSmall),
-              Text(_depositStatus[_deposit?['status']] ?? '${_deposit?['status']}', style: theme.textTheme.bodyMedium),
-              if (_deposit?['requiredAmount'] != null)
-                Text('Khoản cần đặt cọc: ${_money(_deposit!['requiredAmount'])}', style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 12),
-              Text('Phụ lục', style: theme.textTheme.titleSmall),
-              if (_addenda!.isEmpty) Text('Chưa có phụ lục.', style: theme.textTheme.bodyMedium),
-              for (final a in _addenda!)
-                Text(
-                  '${_addendumLead(a['addendumNo'])} ${formatDate(a['effectiveDate'] as String)}, '
-                  '${_addendumStatus[a['status']] ?? a['status']}',
-                  style: theme.textTheme.bodyMedium,
-                ),
-            ],
           ],
         ),
       ),
