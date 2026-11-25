@@ -33,7 +33,8 @@ String describeRightChangeRequest(Map<String, dynamic> request) {
 /// Yêu cầu thay đổi quyền chờ người đại diện quyết định (012 T017; US3; FR-015 a, FR-016, FR-020b). Chỉ trực tuyến:
 /// lệnh không vào hàng đợi ngoại tuyến. Xác nhận làm yêu cầu có hiệu lực ngay; từ chối bắt buộc lý do. Yêu cầu trái mong
 /// muốn của người cao tuổi chỉ Quản lý viện duyệt nên không có nút Xác nhận. Backend kiểm người được quyết định (người
-/// đại diện, không phải người bị đặt/thôi); lỗi hiện tại thẻ.
+/// đại diện, không phải người bị đặt/thôi); lỗi hiện tại thẻ. Test BF-12 C-5 (2026-11-24): thêm ngoại lệ đón Chờ xác
+/// nhận (`GET /pickup-exceptions`, FR-024, FR-050), cùng thẻ, cùng chữ với cổng web; tải lỗi thì chỉ bỏ phần ngoại lệ.
 class RightChangeRequestsScreen extends StatefulWidget {
   const RightChangeRequestsScreen({super.key, required this.api});
 
@@ -43,8 +44,55 @@ class RightChangeRequestsScreen extends StatefulWidget {
   State<RightChangeRequestsScreen> createState() => _RightChangeRequestsScreenState();
 }
 
+/// Một việc chờ người đại diện quyết định: yêu cầu thay đổi quyền hoặc ngoại lệ đón.
+class _Pending {
+  const _Pending({
+    required this.key,
+    required this.path,
+    required this.title,
+    required this.lines,
+    required this.canConfirm,
+    required this.confirmed,
+    required this.rejected,
+  });
+
+  _Pending.request(Map<String, dynamic> r)
+    : this(
+        key: 'right-${r['id']}',
+        path: '/right-change-requests/${r['id']}',
+        title: describeRightChangeRequest(r),
+        lines: ['Lý do: ${r['reason']}', if (r['appliedOnCreation'] == true) 'Đã áp dụng khi lập'],
+        canConfirm: r['conflictingWishId'] == null,
+        confirmed: 'Đã xác nhận yêu cầu',
+        rejected: 'Đã từ chối yêu cầu',
+      );
+
+  _Pending.exception(Map<String, dynamic> e)
+    : this(
+        key: 'pickup-exception-${e['id']}',
+        path: '/pickup-exceptions/${e['id']}',
+        title: 'Ngoại lệ đón: ${e['fullName']} (${e['relationship']})',
+        lines: [
+          'Giấy tờ: ${e['idDocumentNumber']}',
+          'Lý do: ${e['reason']}',
+          'Xác nhận thì người này được đón đúng một lượt trong thời hạn của ngoại lệ.',
+        ],
+        canConfirm: true,
+        confirmed: 'Đã xác nhận ngoại lệ đón',
+        rejected: 'Đã từ chối ngoại lệ đón',
+      );
+
+  final String key;
+  final String path;
+  final String title;
+  final List<String> lines;
+  final bool canConfirm;
+  final String confirmed;
+  final String rejected;
+}
+
 class _RightChangeRequestsScreenState extends State<RightChangeRequestsScreen> {
-  List<Map<String, dynamic>>? _items;
+  List<_Pending>? _items;
   Object? _loadError;
 
   @override
@@ -55,8 +103,18 @@ class _RightChangeRequestsScreenState extends State<RightChangeRequestsScreen> {
 
   Future<void> _load() async {
     try {
-      final items = (await widget.api.getList('/right-change-requests?status=PENDING_CONFIRMATION'))
-          .cast<Map<String, dynamic>>();
+      final requests = (await widget.api.getList(
+        '/right-change-requests?status=PENDING_CONFIRMATION',
+      )).cast<Map<String, dynamic>>();
+      var exceptions = const <Map<String, dynamic>>[];
+      try {
+        exceptions = (await widget.api.getList(
+          '/pickup-exceptions?status=PENDING_CONFIRMATION',
+        )).cast<Map<String, dynamic>>();
+      } on Exception {
+        // Không đọc được ngoại lệ đón thì vẫn hiện yêu cầu thay đổi quyền
+      }
+      final items = [...requests.map(_Pending.request), ...exceptions.map(_Pending.exception)];
       if (!mounted) return;
       setState(() {
         _items = items;
@@ -67,8 +125,8 @@ class _RightChangeRequestsScreenState extends State<RightChangeRequestsScreen> {
     }
   }
 
-  void _decided(Map<String, dynamic> request, String message) {
-    setState(() => _items = _items?.where((r) => r['id'] != request['id']).toList());
+  void _decided(_Pending item, String message) {
+    setState(() => _items = _items?.where((r) => r.key != item.key).toList());
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
@@ -101,9 +159,9 @@ class _RightChangeRequestsScreenState extends State<RightChangeRequestsScreen> {
       itemCount: items.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (_, i) => _RequestCard(
-        key: ValueKey(items[i]['id']),
+        key: ValueKey(items[i].key),
         api: widget.api,
-        request: items[i],
+        item: items[i],
         onDecided: (message) => _decided(items[i], message),
       ),
     );
@@ -111,10 +169,10 @@ class _RightChangeRequestsScreenState extends State<RightChangeRequestsScreen> {
 }
 
 class _RequestCard extends StatefulWidget {
-  const _RequestCard({super.key, required this.api, required this.request, required this.onDecided});
+  const _RequestCard({super.key, required this.api, required this.item, required this.onDecided});
 
   final ApiClient api;
-  final Map<String, dynamic> request;
+  final _Pending item;
   final ValueChanged<String> onDecided;
 
   @override
@@ -141,11 +199,7 @@ class _RequestCardState extends State<_RequestCard> {
       _error = null;
     });
     try {
-      await widget.api.post(
-        '/right-change-requests/${widget.request['id']}/$command',
-        body,
-        headers: {'Idempotency-Key': _key},
-      );
+      await widget.api.post('${widget.item.path}/$command', body, headers: {'Idempotency-Key': _key});
       widget.onDecided(done);
     } on Exception catch (e) {
       if (mounted) setState(() => _error = backendMessage(e));
@@ -157,15 +211,14 @@ class _RequestCardState extends State<_RequestCard> {
   void _reject() {
     setState(() => _submitted = true);
     if (_reason.text.trim().isEmpty) return;
-    _send('reject', {'reason': _reason.text.trim()}, 'Đã từ chối yêu cầu');
+    _send('reject', {'reason': _reason.text.trim()}, widget.item.rejected);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tones = theme.extension<Tones>()!;
-    final request = widget.request;
-    final conflict = request['conflictingWishId'] != null;
+    final item = widget.item;
     final reasonMissing = _submitted && _reason.text.trim().isEmpty;
     return Card(
       child: Padding(
@@ -173,14 +226,12 @@ class _RequestCardState extends State<_RequestCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(describeRightChangeRequest(request), style: theme.textTheme.titleSmall),
-            const SizedBox(height: 4),
-            Text('Lý do: ${request['reason']}', style: theme.textTheme.bodyMedium),
-            if (request['appliedOnCreation'] == true) ...[
+            Text(item.title, style: theme.textTheme.titleSmall),
+            for (final line in item.lines) ...[
               const SizedBox(height: 4),
-              Text('Đã áp dụng khi lập', style: theme.textTheme.bodySmall),
+              Text(line, style: theme.textTheme.bodyMedium),
             ],
-            if (conflict) ...[
+            if (!item.canConfirm) ...[
               const SizedBox(height: 8),
               Text(
                 'Trái mong muốn của người cao tuổi, chờ Quản lý viện duyệt.',
@@ -223,9 +274,9 @@ class _RequestCardState extends State<_RequestCard> {
                 spacing: 12,
                 runSpacing: 8,
                 children: [
-                  if (!conflict)
+                  if (item.canConfirm)
                     FilledButton(
-                      onPressed: _busy ? null : () => _send('confirm', const {}, 'Đã xác nhận yêu cầu'),
+                      onPressed: _busy ? null : () => _send('confirm', const {}, item.confirmed),
                       child: const Text('Xác nhận'),
                     ),
                   OutlinedButton(
