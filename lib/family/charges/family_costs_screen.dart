@@ -118,7 +118,13 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
     'PURCHASE_ASSISTANCE': 'Mua hộ',
     'OTHER': 'Khoản khác',
   };
-  String _money(Object? value) => value == null ? 'Chưa có số tiền' : '$value đồng';
+  // Demo 2026-11-25: tiền VND ngăn nghìn bằng dấu chấm, dạng 1.550.000 đ (NFR-11)
+  static String _money(Object? value) {
+    if (value is! num) return 'Chưa có số tiền';
+    final digits = value.abs().round().toString();
+    final grouped = digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
+    return '${value < 0 ? '-' : ''}$grouped đ';
+  }
   List<Widget> _totals(Object? raw) => (raw as List<dynamic>? ?? []).map((value) {
     final row = value as Map<String, dynamic>;
     return ListTile(title: Text(_types[row['type']] ?? 'Chi phí'), trailing: Text(_money(row['total'])));
@@ -168,6 +174,13 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
                           : 'Bảng thường',
                     ),
                     children: [
+                      // 017 US4: bảng chốt được trừ vào số dư; người thân xem còn nợ, cách nộp tiền ở mục Số dư
+                      if (row['finalPeriod'] == true)
+                        const ListTile(
+                          title: Text(
+                            'Tổng bảng kỳ cuối đã được trừ vào số dư. Xem số dư, còn nợ và cách nộp tiền ở mục Số dư.',
+                          ),
+                        ),
                       ..._totals(row['totalsByType']),
                       for (final raw in row['items'] as List<dynamic>? ?? []) _item(raw as Map<String, dynamic>),
                     ],
