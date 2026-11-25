@@ -179,4 +179,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Mã đăng nhập'), findsOneWidget);
   });
+
+  // Demo 2026-11-25: đọc được danh sách nhân viên thì chọn nhân viên đã nghe theo tên thay cho ô nhập mã
+  testWidgets('FR_069_chonNhanVienDaNgheTheoTen', (tester) async {
+    backend.on('GET', '/staff', 200, [
+      {'id': 9003, 'fullName': 'Lê Thị Nghe', 'position': 'Điều dưỡng'},
+    ]);
+    await pumpScreen(tester);
+    await tapText(tester, 'Nguyễn Thị Lan');
+    await tapText(tester, 'Tự yêu cầu');
+    expect(find.widgetWithText(TextField, 'Mã hồ sơ nhân viên đã nghe'), findsNothing);
+    await tester.ensureVisible(find.text('Nhân viên đã nghe'));
+    await tester.tap(find.text('Nhân viên đã nghe'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lê Thị Nghe (Điều dưỡng)').last);
+    await tester.pumpAndSettle();
+    await tapText(tester, 'Tạo mã QR');
+    final body = jsonDecode(backend.calls('POST', '/resident-accounts/5/login-qr-code').single.body) as Map;
+    expect((body['consent'] as Map)['withStaffId'], 9003);
+  });
 }
