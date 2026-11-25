@@ -132,6 +132,40 @@ void main() {
     expect(find.text('Bật quyền Xem chi phí cho người thân'), findsOneWidget);
   });
 
+  // Test BF-12 C-5 (2026-11-24): ngoại lệ đón Chờ xác nhận cùng danh sách, cùng chữ với cổng web (FR-024, FR-050)
+  testWidgets('FR_024_ngoaiLeDon_nguoiDaiDienXacNhan', (tester) async {
+    final backend = FakeBackend()
+      ..on('GET', '/right-change-requests', 200, <Object>[])
+      ..on('GET', '/pickup-exceptions', 200, [
+        {
+          'id': 81,
+          'residentId': 5,
+          'fullName': 'Ngô Hàng Xóm',
+          'idDocumentNumber': '0099',
+          'relationship': 'Hàng xóm',
+          'reason': 'Con gái ốm, nhờ hàng xóm đón',
+          'status': 'PENDING_CONFIRMATION',
+          'createdAt': '2026-11-05T08:00:00Z',
+        },
+      ])
+      ..on('POST', '/pickup-exceptions/81/confirm', 200, {'id': 81});
+    await pumpScreen(tester, backend.client());
+
+    final list = backend.calls('GET', '/pickup-exceptions').single;
+    expect(list.url.queryParameters['status'], 'PENDING_CONFIRMATION');
+    expect(find.text('Ngoại lệ đón: Ngô Hàng Xóm (Hàng xóm)'), findsOneWidget);
+    expect(find.text('Giấy tờ: 0099'), findsOneWidget);
+    expect(find.text('Lý do: Con gái ốm, nhờ hàng xóm đón'), findsOneWidget);
+
+    await tapButton(tester, 'Xác nhận');
+
+    final confirm = backend.calls('POST', '/pickup-exceptions/81/confirm').single;
+    expect(jsonDecode(confirm.body), <String, dynamic>{});
+    expect(confirm.headers['Idempotency-Key'], matches(RegExp(r'^[0-9a-f-]{36}$')));
+    expect(find.text('Ngoại lệ đón: Ngô Hàng Xóm (Hàng xóm)'), findsNothing);
+    expect(find.text('Đã xác nhận ngoại lệ đón'), findsOneWidget);
+  });
+
   testWidgets('trong_khongCoYeuCauCho', (tester) async {
     final backend = FakeBackend()..on('GET', '/right-change-requests', 200, <Object>[]);
     await pumpScreen(tester, backend.client());
