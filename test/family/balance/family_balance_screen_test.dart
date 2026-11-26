@@ -61,9 +61,11 @@ void main() {
         'transactions': [
           {'id': 3, 'type': 'STATEMENT_PAYMENT', 'ledger': 'BALANCE', 'amount': -100, 'at': '2026-11-01T01:00:00Z'},
           {'id': 2, 'type': 'CASH_PAYMENT', 'ledger': 'BALANCE', 'amount': 200, 'at': '2026-10-20T02:00:00Z'},
+          {'id': 4, 'type': 'REFUND', 'ledger': 'BALANCE', 'amount': -50, 'at': '2026-10-19T02:00:00Z'},
         ],
       })
-      ..on('GET', '/family-portal/balance-transactions/2/receipt', 200, {});
+      ..on('GET', '/family-portal/balance-transactions/2/receipt', 200, {})
+      ..on('GET', '/family-portal/balance-transactions/4/receipt', 200, {});
     final shared = <String>[];
     await tester.pumpWidget(
       MaterialApp(
@@ -80,12 +82,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Tải biên nhận'), findsOneWidget);
-    await tester.tap(find.text('Tải biên nhận'));
+    // khoản nộp và khoản hoàn có biên nhận, trừ chi phí thì không
+    expect(find.text('Tải biên nhận'), findsNWidgets(2));
+    await tester.tap(find.text('Tải biên nhận').first);
     await tester.pumpAndSettle();
 
     expect(b.calls('GET', '/family-portal/balance-transactions/2/receipt'), hasLength(1));
     expect(shared, ['BN-000002.pdf application/pdf']);
+
+    await tester.tap(find.text('Tải biên nhận').last);
+    await tester.pumpAndSettle();
+    expect(shared.last, 'HT-000004.pdf application/pdf');
   });
 
   testWidgets('FR_003_chuaCoTaiKhoanThu_khongCoMaQr', (tester) async {

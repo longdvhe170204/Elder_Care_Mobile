@@ -19,8 +19,14 @@ const _types = {
   'DEPOSIT_REFUND': 'Hoàn cọc',
 };
 
-// Q-451: khoản nộp (cổng chỉ trả giao dịch Đã xác nhận) có biên nhận
-const _receiptTypes = {'CASH_PAYMENT', 'BANK_TRANSFER_PAYMENT', 'DEPOSIT_RECEIPT'};
+// Q-451: khoản nộp, khoản hoàn (cổng chỉ trả giao dịch Đã xác nhận) có biên nhận
+const _paymentTypes = {'CASH_PAYMENT', 'BANK_TRANSFER_PAYMENT', 'DEPOSIT_RECEIPT'};
+const _refundTypes = {'REFUND', 'DEPOSIT_REFUND'};
+
+bool _hasReceipt(Map<String, dynamic> t) {
+  final amount = t['amount'] as num;
+  return (_paymentTypes.contains(t['type']) && amount > 0) || (_refundTypes.contains(t['type']) && amount < 0);
+}
 
 /// Tiền VND, dấu chấm ngăn nghìn (NFR-11), ví dụ `-9.300.000 đ` (demo 2026-11-25: thống nhất ký hiệu đ với web).
 String money(num amount) {
@@ -83,10 +89,12 @@ class _FamilyBalanceScreenState extends State<FamilyBalanceScreen> {
   }
 
   // Q-451: biên nhận nộp tiền, số theo mã giao dịch
-  Future<void> _receipt(int id) async {
+  Future<void> _receipt(Map<String, dynamic> t) async {
+    final id = t['id'] as int;
+    final prefix = (t['amount'] as num) > 0 ? 'BN' : 'HT';
     try {
       final bytes = await widget.api.getBytes('/family-portal/balance-transactions/$id/receipt');
-      await widget.share(bytes, 'BN-${id.toString().padLeft(6, '0')}.pdf', 'application/pdf');
+      await widget.share(bytes, '$prefix-${id.toString().padLeft(6, '0')}.pdf', 'application/pdf');
     } on Exception catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(backendMessage(e))));
     }
@@ -172,8 +180,8 @@ class _FamilyBalanceScreenState extends State<FamilyBalanceScreen> {
                             '${t['ledger'] == 'DEPOSIT' ? ', sổ tiền cọc' : ''}',
                             style: text.bodySmall,
                           ),
-                          if (_receiptTypes.contains(t['type']) && (t['amount'] as num) > 0)
-                            TextButton(onPressed: () => _receipt(t['id'] as int), child: const Text('Tải biên nhận')),
+                          if (_hasReceipt(t))
+                            TextButton(onPressed: () => _receipt(t), child: const Text('Tải biên nhận')),
                         ],
                       ),
                     ),
