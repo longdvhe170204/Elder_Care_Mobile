@@ -161,4 +161,46 @@ void main() {
 
     expect(find.text('Ngày hiệu lực sớm hơn ngày bắt đầu hợp đồng'), findsOneWidget);
   });
+
+  testWidgets('FR_041_doiHopDongSangBanTru_xoaGiaTriCu_khongChoChonBanTru', (tester) async {
+    final backend = FakeBackend()
+      ..on('GET', '/family-portal/residents/5/contract', 200, {
+        'contracts': [
+          {
+            'id': 31,
+            'contractNumber': 'HD-031',
+            'status': 'ACTIVE',
+            'residenceType': 'LONG_TERM_RESIDENTIAL',
+            'careLevel': 'REGULAR',
+            'startDate': '2026-01-01',
+          },
+          {
+            'id': 32,
+            'contractNumber': 'HD-032',
+            'status': 'ACTIVE',
+            'residenceType': 'DAY_CARE',
+            'careLevel': 'REGULAR',
+            'startDate': '2026-11-01',
+          },
+        ],
+      });
+    await pumpScreen(tester, backend);
+
+    await tester.tap(find.byType(DropdownButtonFormField<int>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hợp đồng HD-031').last);
+    await tester.pumpAndSettle();
+    await choose(tester, 'Nội dung thay đổi', 'Loại lưu trú');
+    await choose(tester, 'Giá trị mới', 'Bán trú');
+
+    // Chuyển sang hợp đồng đã là Bán trú: giá trị cũ phải xóa, Bán trú không còn trong lựa chọn
+    await tester.tap(find.byType(DropdownButtonFormField<int>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hợp đồng HD-032').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Giá trị mới'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bán trú'), findsNothing);
+    expect(find.text('Nội trú dài hạn'), findsOneWidget);
+  });
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/common/theme/app_theme.dart';
+import 'package:mobile/staff/medication/dose_sheet.dart';
 import 'package:mobile/staff/medication/family_medication_screen.dart';
 import 'package:mobile/staff/medication/medication_round_gateway.dart';
 import 'package:mobile/staff/medication/medication_round_screen.dart';
@@ -131,15 +132,22 @@ void main() {
       expect(await f.queue.unsynced(7), isEmpty, reason: 'Hoãn chỉ ghi khi có mạng');
     });
 
-    test('BR_M07_26_nhanLieu_guiClaimVaTraGioHetHan', () async {
+    testWidgets('M07_boChucNangNhanLieu_khongHienNutNhanLieu', (tester) async {
       final load = await f.repository.load(7);
-      final item = load.round.items.first;
-      f.backend.on('POST', '/medication-doses/10-202611050800/claim', 200, {'claimExpiresAt': '2026-11-05T01:20:00Z'});
-
-      final until = await f.repository.claim(load.round.items.firstWhere((i) => (i['dose'] as Map)['doseKey'] == '10-202611050800'), 'k');
-
-      expect(until, DateTime.utc(2026, 11, 5, 1, 20));
-      expect(item, isNotNull);
+      final item = load.round.items.firstWhere((i) => (i['dose'] as Map)['doseKey'] == '10-202611050800');
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: DoseSheet(
+            accountId: 7,
+            items: [item],
+            repository: f.repository,
+            newKey: () => 'k',
+            clock: () => DateTime.utc(2026, 11, 5, 1, 10),
+          ),
+        ),
+      ));
+      expect(find.text('Nhận liều'), findsNothing);
     });
 
     test('BR_M07_26_chiSo_vaoHangDoiNgoaiTuyen', () async {
