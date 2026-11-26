@@ -50,7 +50,6 @@ class _Draft {
   final TextEditingController note = TextEditingController();
   final Map<String, TextEditingController> measures;
   String? measureError;
-  DateTime? claimUntil;
   bool afterDisconnect = false;
   bool saved = false;
   String? error;
@@ -117,35 +116,6 @@ class _DoseSheetState extends State<DoseSheet> {
       return null;
     }
     return {'reason': reason, if (note.isNotEmpty) 'note': note};
-  }
-
-  /// Nhận liều (BR-M07-26): giữ liều 15 phút để soạn thuốc; cần có mạng.
-  Future<void> claim(int i) async {
-    final d = drafts[i];
-    setState(() => d.error = null);
-    try {
-      final until = await widget.repository.claim(widget.items[i], widget.newKey());
-      d.claimUntil = until;
-    } on ApiProblem catch (problem) {
-      d.error = problem.detail;
-    } on ApiUnreachable {
-      d.error = 'Nhận liều cần có mạng.';
-    }
-    if (mounted) setState(() {});
-  }
-
-  Future<void> release(int i) async {
-    final d = drafts[i];
-    setState(() => d.error = null);
-    try {
-      await widget.repository.release(widget.items[i], widget.newKey());
-      d.claimUntil = null;
-    } on ApiProblem catch (problem) {
-      d.error = problem.detail;
-    } on ApiUnreachable {
-      d.error = 'Bỏ nhận cần có mạng.';
-    }
-    if (mounted) setState(() {});
   }
 
   Future<void> save() async {
@@ -265,17 +235,6 @@ class _DoseSheetState extends State<DoseSheet> {
               ),
               if (instruction != null && instruction.isNotEmpty) Text(instruction, style: theme.textTheme.bodySmall),
               ..._tags(dose, item, theme),
-              if (!d.saved)
-                Row(
-                  children: [
-                    if (d.claimUntil == null)
-                      TextButton(onPressed: enabled ? () => claim(index) : null, child: const Text('Nhận liều'))
-                    else ...[
-                      Text('Bạn đã nhận liều đến ${formatTime(d.claimUntil!)}', style: theme.textTheme.bodySmall),
-                      TextButton(onPressed: enabled ? () => release(index) : null, child: const Text('Bỏ nhận')),
-                    ],
-                  ],
-                ),
               if (d.saved)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -375,7 +334,6 @@ List<Widget> _tags(Map<dynamic, dynamic> dose, Map<String, dynamic> item, ThemeD
   if (dose['postponed'] == true) Text('Đã hoãn: ${dose['postponedReason'] ?? ''}', style: theme.textTheme.bodySmall),
   Text(dose['medicationSource'] == 'FAMILY_SENT' ? 'Gia đình gửi' : 'Thuốc viện', style: theme.textTheme.bodySmall),
   if (dose['requiresOnline'] == true) Text('Kiểm soát đặc biệt, phải trực tuyến', style: theme.textTheme.bodySmall),
-  if (dose['floorShared'] == true) Text('Liều chung của tầng', style: theme.textTheme.bodySmall),
 ];
 
 /// Khối dị ứng (DESIGN.md `care-notes`: khối hổ phách duy nhất có nền); không có mục thì "Chưa ghi nhận".
