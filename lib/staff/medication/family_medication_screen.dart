@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
+import '../../common/widgets/person_picker_field.dart';
 import 'medication_labels.dart';
 import 'medication_round_screen.dart';
 
@@ -96,10 +97,9 @@ class _FamilyMedicationScreenState extends State<FamilyMedicationScreen> {
     final id = _resident!['id'] as int;
     try {
       final batches = (await widget.api.getList('/residents/$id/family-medications')).cast<Map<String, dynamic>>();
-      final prescriptions = (await widget.api.getList('/residents/$id/prescriptions?status=ACTIVE&status=SUSPENDED'))
-          .cast<Map<String, dynamic>>()
-          .where((p) => p['medicationSource'] == 'FAMILY_SENT')
-          .toList();
+      final prescriptions = (await widget.api.getList(
+        '/residents/$id/prescriptions?status=ACTIVE&status=SUSPENDED',
+      )).cast<Map<String, dynamic>>().where((p) => p['medicationSource'] == 'FAMILY_SENT').toList();
       if (mounted) {
         setState(() {
           _batches = batches;
@@ -113,11 +113,7 @@ class _FamilyMedicationScreenState extends State<FamilyMedicationScreen> {
   }
 
   Future<void> _sheet(Widget Function(BuildContext) builder) async {
-    final message = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: builder,
-    );
+    final message = await showModalBottomSheet<String>(context: context, isScrollControlled: true, builder: builder);
     if (message == null || !mounted) return;
     setState(() => _message = message);
     await _loadBatches();
@@ -131,7 +127,11 @@ class _FamilyMedicationScreenState extends State<FamilyMedicationScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_error != null) Semantics(liveRegion: true, child: Text(_error!, style: TextStyle(color: theme.colorScheme.error))),
+          if (_error != null)
+            Semantics(
+              liveRegion: true,
+              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            ),
           if (_message != null) Semantics(liveRegion: true, child: Text(_message!)),
           if (_resident == null) ..._pickResident(theme) else ..._batchList(theme),
         ],
@@ -152,7 +152,8 @@ class _FamilyMedicationScreenState extends State<FamilyMedicationScreen> {
         suffixIcon: IconButton(icon: const Icon(Icons.search), tooltip: 'Tìm', onPressed: _loadResidents),
       ),
     ),
-    if (_residents == null && _error == null) const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
+    if (_residents == null && _error == null)
+      const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
     for (final r in _residents ?? const <Map<String, dynamic>>[])
       ListTile(
         title: Text((r['personalInfo'] as Map?)?['fullName'] as String? ?? 'Người cao tuổi #${r['id']}'),
@@ -180,15 +181,15 @@ class _FamilyMedicationScreenState extends State<FamilyMedicationScreen> {
         ),
         const Spacer(),
         FilledButton(
-          onPressed: () => _sheet(
-            (_) => _ReceiveSheet(api: widget.api, residentId: _resident!['id'] as int, newKey: widget.newKey),
-          ),
+          onPressed: () =>
+              _sheet((_) => _ReceiveSheet(api: widget.api, residentId: _resident!['id'] as int, newKey: widget.newKey)),
           child: const Text('Tiếp nhận lô mới'),
         ),
       ],
     ),
     if (_batches == null && _error == null) const LinearProgressIndicator(),
-    if (_batches != null && _batches!.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('Chưa có lô thuốc gia đình gửi.')),
+    if (_batches != null && _batches!.isEmpty)
+      const Padding(padding: EdgeInsets.all(16), child: Text('Chưa có lô thuốc gia đình gửi.')),
     for (final b in _batches ?? const <Map<String, dynamic>>[])
       Card(
         margin: const EdgeInsets.only(top: 12),
@@ -226,6 +227,7 @@ class _FamilyMedicationScreenState extends State<FamilyMedicationScreen> {
                                 api: widget.api,
                                 action: action,
                                 batch: b,
+                                residentId: _resident!['id'] as int,
                                 prescriptions: _prescriptions,
                                 newKey: widget.newKey,
                               ),
@@ -357,7 +359,11 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
               'Nhập đủ tên thuốc, hàm lượng, số lượng, hạn dùng, bao bì, người giao.',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-          if (error != null) Semantics(liveRegion: true, child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+          if (error != null)
+            Semantics(
+              liveRegion: true,
+              child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ),
           const SizedBox(height: 12),
           FilledButton(onPressed: busy ? null : save, child: Text(busy ? 'Đang lưu…' : 'Lưu tiếp nhận')),
         ],
@@ -371,12 +377,14 @@ class _ActionSheet extends StatefulWidget {
     required this.api,
     required this.action,
     required this.batch,
+    required this.residentId,
     required this.prescriptions,
     required this.newKey,
   });
   final ApiClient api;
   final String action;
   final Map<String, dynamic> batch;
+  final int residentId;
   final List<Map<String, dynamic>> prescriptions;
   final String Function() newKey;
 
@@ -417,7 +425,8 @@ class _ActionSheetState extends State<_ActionSheet> {
         count == null ||
             witness.text.trim().isEmpty ||
             reason.text.trim().isEmpty ||
-            (kind == 'FAMILY_REQUEST' && (int.tryParse(representative.text.trim()) == null || method.text.trim().isEmpty)),
+            (kind == 'FAMILY_REQUEST' &&
+                (int.tryParse(representative.text.trim()) == null || method.text.trim().isEmpty)),
       _ => false,
     };
   }
@@ -522,7 +531,11 @@ class _ActionSheetState extends State<_ActionSheet> {
             if (widget.action == 'LOW') _field(note, 'Ghi chú gửi gia đình (không bắt buộc)', lines: 2),
             if (widget.action == 'DEPLETED') const Text('Lô chuyển Đã dùng hết và gỡ liên kết đơn.'),
             if (widget.action == 'RETURN') ...[
-              _field(quantity, 'Số lượng đếm thực tế lúc trả', keyboard: const TextInputType.numberWithOptions(decimal: true)),
+              _field(
+                quantity,
+                'Số lượng đếm thực tế lúc trả',
+                keyboard: const TextInputType.numberWithOptions(decimal: true),
+              ),
               _field(recipient, 'Người nhận'),
               _field(relationship, 'Quan hệ'),
               _field(witness, 'Người chứng kiến'),
@@ -538,7 +551,14 @@ class _ActionSheetState extends State<_ActionSheet> {
                 onChanged: busy ? null : (v) => setState(() => kind = v ?? kind),
               ),
               if (kind == 'FAMILY_REQUEST') ...[
-                _field(representative, 'Mã người đại diện yêu cầu', keyboard: TextInputType.number),
+                // Demo 2026-11-25: chọn người đại diện theo tên; không tải được danh sách thì nhập mã như trước
+                PersonPickerField(
+                  load: () => loadFamilyOptions(widget.api, widget.residentId),
+                  controller: representative,
+                  label: 'Người đại diện yêu cầu',
+                  fallbackLabel: 'Mã người đại diện yêu cầu',
+                  onChanged: (_) => setState(() {}),
+                ),
                 _field(method, 'Hình thức yêu cầu'),
               ],
               _field(quantity, 'Số lượng đếm thực tế', keyboard: const TextInputType.numberWithOptions(decimal: true)),

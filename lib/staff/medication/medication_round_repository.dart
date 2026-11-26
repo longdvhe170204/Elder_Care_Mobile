@@ -1,14 +1,14 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import '../../common/api/api_client.dart';
 import '../../common/offline/offline_queue.dart';
 import 'medication_round_cache.dart';
 import 'medication_round_gateway.dart';
 
-/// Loại bản ghi ngoại tuyến của kết quả liều (backend `DoseResultOfflineHandler.RECORD_TYPE`).
+/// Loáº¡i báº£n ghi ngoáº¡i tuyáº¿n cá»§a káº¿t quáº£ liá»u (backend `DoseResultOfflineHandler.RECORD_TYPE`).
 const doseResultRecordType = 'M07.DOSE_RESULT';
 
-/// Liều thuốc kiểm soát đặc biệt không được lưu tạm trên máy (FR-029, BR-M07-20, Q-01).
+/// Liá»u thuá»‘c kiá»ƒm soÃ¡t Ä‘áº·c biá»‡t khÃ´ng Ä‘Æ°á»£c lÆ°u táº¡m trÃªn mÃ¡y (FR-029, BR-M07-20, Q-01).
 class RequiresOnline implements Exception {}
 
 class MedicationRoundLoad {
@@ -16,15 +16,15 @@ class MedicationRoundLoad {
   final CachedMedicationRound round;
   final bool offline;
 
-  /// doseKey → kết quả đã ghi trên máy, chưa đồng bộ (nhãn "Chưa đồng bộ", DESIGN.md 15.5).
+  /// doseKey â†’ káº¿t quáº£ Ä‘Ã£ ghi trÃªn mÃ¡y, chÆ°a Ä‘á»“ng bá»™ (nhÃ£n "ChÆ°a Ä‘á»“ng bá»™", DESIGN.md 15.5).
   final Map<String, String> queued;
 }
 
 enum RecordSaved { online, queued }
 
-/// Tải vòng phát thuốc và ghép trường hiển thị của FR-020 từ các operation có sẵn (không đổi hợp đồng `Dose`):
-/// `Prescription` (liều, đường dùng, hướng dẫn), `Medication` (tên, hàm lượng, đơn vị), hồ sơ 001 (họ tên, dị ứng
-/// Hiệu lực). Mất mạng thì trả bản đã tải gần nhất; 403, 404 thì xóa bản đó, không phục hồi nội dung đã mất quyền.
+/// Táº£i vÃ²ng phÃ¡t thuá»‘c vÃ  ghÃ©p trÆ°á»ng hiá»ƒn thá»‹ cá»§a FR-020 tá»« cÃ¡c operation cÃ³ sáºµn (khÃ´ng Ä‘á»•i há»£p Ä‘á»“ng `Dose`):
+/// `Prescription` (liá»u, Ä‘Æ°á»ng dÃ¹ng, hÆ°á»›ng dáº«n), `Medication` (tÃªn, hÃ m lÆ°á»£ng, Ä‘Æ¡n vá»‹), há»“ sÆ¡ 001 (há» tÃªn, dá»‹ á»©ng
+/// Hiá»‡u lá»±c). Máº¥t máº¡ng thÃ¬ tráº£ báº£n Ä‘Ã£ táº£i gáº§n nháº¥t; 403, 404 thÃ¬ xÃ³a báº£n Ä‘Ã³, khÃ´ng phá»¥c há»“i ná»™i dung Ä‘Ã£ máº¥t quyá»n.
 class MedicationRoundRepository {
   MedicationRoundRepository(this.gateway, this.cache, this.queue, {DateTime Function()? clock})
     : clock = clock ?? DateTime.now;
@@ -71,7 +71,7 @@ class MedicationRoundRepository {
     ];
   }
 
-  /// Hồ sơ ngoài phạm vi xem của người dùng vẫn để liều hiện (backend đã cho liều vào vòng), chỉ thiếu họ tên.
+  /// Há»“ sÆ¡ ngoÃ i pháº¡m vi xem cá»§a ngÆ°á»i dÃ¹ng váº«n Ä‘á»ƒ liá»u hiá»‡n (backend Ä‘Ã£ cho liá»u vÃ o vÃ²ng), chá»‰ thiáº¿u há» tÃªn.
   Future<Map<String, dynamic>> _residentOrNull(int id) async {
     try {
       return await gateway.resident(id);
@@ -116,7 +116,7 @@ class MedicationRoundRepository {
       },
       'resident': {
         'fullName': (resident?['personalInfo'] as Map?)?['fullName'],
-        // null: không được xem phần sức khỏe, màn không hiện dòng dị ứng.
+        // null: khÃ´ng Ä‘Æ°á»£c xem pháº§n sá»©c khá»e, mÃ n khÃ´ng hiá»‡n dÃ²ng dá»‹ á»©ng.
         'allergies': hidden || resident == null || resident.isEmpty
             ? null
             : [
@@ -128,7 +128,7 @@ class MedicationRoundRepository {
     };
   }
 
-  /// Liều Bỏ lỡ ghi được "đã dùng muộn": kết quả đã có mã (api-006 `Dose.result.id`).
+  /// Liá»u Bá» lá»¡ ghi Ä‘Æ°á»£c "Ä‘Ã£ dÃ¹ng muá»™n": káº¿t quáº£ Ä‘Ã£ cÃ³ mÃ£ (api-006 `Dose.result.id`).
   static int? lateResultId(Map<String, dynamic> item) {
     final dose = item['dose'] as Map;
     if (dose['status'] != 'MISSED') return null;
@@ -138,14 +138,9 @@ class MedicationRoundRepository {
   Future<void> correctLate(Map<String, dynamic> item, DateTime at, String reason, String key) =>
       gateway.correctLate(lateResultId(item)!, at, reason, key);
 
-  Future<DateTime?> claim(Map<String, dynamic> item, String key) =>
-      gateway.claim((item['dose'] as Map)['doseKey'] as String, key);
 
-  Future<void> release(Map<String, dynamic> item, String key) =>
-      gateway.release((item['dose'] as Map)['doseKey'] as String, key);
-
-  /// Ghi kết quả liều: có mạng thì gọi lệnh trực tuyến; mất mạng thì đưa vào hàng đợi `M07.DOSE_RESULT` (kết quả
-  /// đồng bộ từng bản ghi ở màn Đồng bộ của common, BR-M15-20); liều kiểm soát đặc biệt mất mạng thì [RequiresOnline].
+  /// Ghi káº¿t quáº£ liá»u: cÃ³ máº¡ng thÃ¬ gá»i lá»‡nh trá»±c tuyáº¿n; máº¥t máº¡ng thÃ¬ Ä‘Æ°a vÃ o hÃ ng Ä‘á»£i `M07.DOSE_RESULT` (káº¿t quáº£
+  /// Ä‘á»“ng bá»™ tá»«ng báº£n ghi á»Ÿ mÃ n Äá»“ng bá»™ cá»§a common, BR-M15-20); liá»u kiá»ƒm soÃ¡t Ä‘áº·c biá»‡t máº¥t máº¡ng thÃ¬ [RequiresOnline].
   Future<RecordSaved> record({
     required int accountId,
     required Map<String, dynamic> item,
@@ -158,7 +153,7 @@ class MedicationRoundRepository {
       await gateway.record(dose['doseKey'] as String, outcome, body, key);
       return RecordSaved.online;
     } on ApiUnreachable {
-      // Hoãn có chủ đích chỉ ghi khi có mạng (BR-M07-26): không đưa vào hàng đợi
+      // HoÃ£n cÃ³ chá»§ Ä‘Ã­ch chá»‰ ghi khi cÃ³ máº¡ng (BR-M07-26): khÃ´ng Ä‘Æ°a vÃ o hÃ ng Ä‘á»£i
       if (outcome == DoseOutcome.postponed) rethrow;
       if (dose['requiresOnline'] == true) throw RequiresOnline();
       await queue.enqueue(

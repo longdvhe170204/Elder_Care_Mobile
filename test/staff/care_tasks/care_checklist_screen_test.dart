@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +76,80 @@ void main() {
     expect(find.text('BÂY GIỜ'), findsOneWidget);
     await open(tester, 'Việc đến hạn');
     expect(find.text('Lựa chọn đã trao đổi'), findsOneWidget);
+  });
+  testWidgets('FR_034_hoanThanhNhanhTuChecklistVaTaiLaiTrangThai', (tester) async {
+    final simple = {
+      'id': 1,
+      'taskType': 'Việc cần hoàn thành',
+      'status': 'DUE',
+      'resultType': 'PERFORMED',
+      'allowedCommands': ['record'],
+    };
+    final measured = {...simple, 'id': 2, 'taskType': 'Đo chỉ số', 'resultType': 'MEASURED_VALUE'};
+    gateway.body['tasks'] = [simple, measured];
+    await view(tester);
+    final quick = find.text('Đánh dấu hoàn thành');
+    expect(quick, findsOneWidget);
+    await tester.tap(quick);
+    await tester.pumpAndSettle();
+    expect(find.text('Vừa hoàn thành'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(gateway.recordings, isEmpty);
+    gateway.body['tasks'] = [
+      {...simple, 'status': 'COMPLETED', 'allowedCommands': <String>[]},
+      measured,
+    ];
+    await tester.tap(find.text('Xác nhận hoàn thành'));
+    await tester.pumpAndSettle();
+    expect(gateway.recordings.single, isEmpty);
+    expect(quick, findsNothing);
+  });
+
+  testWidgets('FR_035_hoanThanhTruocDoNgoaiTuyenGiuCaHaiMoc', (tester) async {
+    final backend = FakeBackend()..down = true;
+    final api = backend.client();
+    final db = OfflineDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final deviceTime = DateTime.utc(2026, 11, 6, 4, 5);
+    final queue = OfflineQueue(db, api, clock: () => deviceTime);
+    repository = CareChecklistRepository(gateway, cache, recorder: CareOfflineRecording(api, queue, 1));
+    gateway.body['tasks'] = [
+      {
+        'id': 1,
+        'taskType': 'Việc đã thực hiện',
+        'status': 'OVERDUE',
+        'resultType': 'PERFORMED',
+        'allowedCommands': ['record'],
+        'windowFrom': '2026-11-06T01:00:00Z',
+      },
+    ];
+    await repository.load(1, 9);
+    gateway.failure = ApiUnreachable();
+    await view(tester);
+    await tester.tap(find.text('Đánh dấu hoàn thành'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Đã hoàn thành trước đó'));
+    await tester.pumpAndSettle();
+    final confirm = find.text('Xác nhận hoàn thành');
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(find.text('Nhập thời điểm thực tế đã thực hiện.'), findsOneWidget);
+    expect(await queue.unsynced(1), isEmpty);
+    final performed = find.widgetWithText(TextField, 'Thời điểm thực hiện (dd/MM/yyyy HH:mm)');
+    await tester.enterText(performed, '06/11/2026 08:27');
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    final row = (await queue.unsynced(1)).single;
+    expect(row.deviceTime.toUtc(), deviceTime);
+    expect(jsonDecode(row.content), {
+      'taskId': 1,
+      'action': 'RECORD',
+      'recording': {'performedAt': '2026-11-06T01:27:00.000Z'},
+    });
+    expect(find.textContaining('Chưa đồng bộ'), findsWidgets);
+    expect(find.text('Đánh dấu hoàn thành'), findsNothing);
   });
   testWidgets('FR_030_dayDuNguCanhCongViecKhiChu200PhanTram', (tester) async {
     tester.view.physicalSize = const Size(375, 812);
@@ -357,7 +432,8 @@ void main() {
     late List<String> opened;
     CareChecklistLinks links() => CareChecklistLinks(
       openHandover: (context, shiftId) async => opened.add('handover:$shiftId'),
-      openPlans: (context, residents) async => opened.add('plans:${residents.map((r) => '${r['id']} ${r['name']}').join(',')}'),
+      openPlans: (context, residents) async =>
+          opened.add('plans:${residents.map((r) => '${r['id']} ${r['name']}').join(',')}'),
       reportIncident: (context, residentId) async {
         opened.add('incident:$residentId');
         return false;

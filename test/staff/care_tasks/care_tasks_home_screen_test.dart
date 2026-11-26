@@ -229,6 +229,7 @@ void main() {
     expect(find.text('Xem kế hoạch chăm sóc'), findsNothing);
     await tester.tap(find.text('Báo sự cố'));
     await tester.pumpAndSettle();
-    expect(find.text('Ghi nhận sự cố'), findsOneWidget);
+    // Màn Báo sự cố 4 bước (BF-06): mở từ công việc thì cụ đã chọn sẵn, vào thẳng bước chọn loại
+    expect(find.text('Chuyện gì đã xảy ra?'), findsOneWidget);
   });
 }

@@ -5,8 +5,8 @@ import 'package:mobile/family/admissions/contract_screen.dart';
 
 import '../../support/fake_backend.dart';
 
-// 004 T038 (US3; FR-028 → FR-031): người đại diện xem hợp đồng, phụ lục và trạng thái đặt cọc trên app người thân; không
-// có thao tác sửa; lỗi tải báo rõ kèm nút Tải lại.
+// 004 T038 (US3; FR-028): người đại diện xem hợp đồng trên app người thân qua cổng người thân; không có thao tác sửa;
+// lỗi tải báo rõ kèm nút Tải lại. Phụ lục và đặt cọc chưa có trên cổng người thân (việc còn lại mục B), nên không test ở đây.
 
 Future<void> pumpScreen(WidgetTester tester, FakeBackend backend) async {
   await tester.pumpWidget(
@@ -26,9 +26,15 @@ Map<String, dynamic> contract({int id = 31, String status = 'ACTIVE'}) => {
   'status': status,
 };
 
+FakeBackend withResident({List<dynamic> contracts = const []}) => FakeBackend()
+  ..on('GET', '/family-portal/residents', 200, [
+    {'residentId': 9, 'fullName': 'Nguyễn Văn An', 'representative': true},
+  ])
+  ..on('GET', '/family-portal/residents/9/contract', 200, {'contracts': contracts});
+
 void main() {
   testWidgets('FR_028_hienHopDong_trangThai_vaKhongCoNutSua', (tester) async {
-    final backend = FakeBackend()..on('GET', '/contracts', 200, [contract()]);
+    final backend = withResident(contracts: [contract()]);
     await pumpScreen(tester, backend);
 
     expect(find.text('Hợp đồng HD-031'), findsOneWidget);
@@ -37,43 +43,16 @@ void main() {
     expect(find.text('Sửa'), findsNothing);
   });
 
-  testWidgets('FR_030_xemPhuLucVaDatCoc_chiDoc', (tester) async {
-    final backend = FakeBackend()
-      ..on('GET', '/contracts', 200, [contract()])
-      ..on('GET', '/contracts/31/deposit', 200, {'status': 'NOT_SATISFIED', 'requiredAmount': 10000000})
-      ..on('GET', '/contracts/31/addenda', 200, [
-        {'id': 1, 'effectiveDate': '2026-12-01', 'status': 'PENDING_EFFECTIVE'},
-      ]);
+  testWidgets('FR_028_khongGoiEndpointCuaNhanVien', (tester) async {
+    final backend = withResident(contracts: [contract()]);
     await pumpScreen(tester, backend);
 
-    await tester.tap(find.text('Xem phụ lục, đặt cọc'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Chưa đặt cọc'), findsOneWidget);
-    expect(find.text('Khoản cần đặt cọc: 10.000.000 đ'), findsOneWidget);
-    expect(find.text('Hiệu lực 01/12/2026, Chờ hiệu lực'), findsOneWidget);
-    expect(find.textContaining('Thu cọc'), findsNothing);
-  });
-
-  testWidgets('FR_043d_phuLucChoKy_hienSoPhuLucVaTrangThai', (tester) async {
-    final backend = FakeBackend()
-      ..on('GET', '/contracts', 200, [contract()])
-      ..on('GET', '/contracts/31/deposit', 200, {'status': 'SATISFIED'})
-      ..on('GET', '/contracts/31/addenda', 200, [
-        {'id': 2, 'addendumNo': 2, 'effectiveDate': '2026-12-01', 'status': 'PENDING_SIGNATURE'},
-        {'id': 1, 'addendumNo': 1, 'effectiveDate': '2026-11-15', 'status': 'CANCELLED'},
-      ]);
-    await pumpScreen(tester, backend);
-
-    await tester.tap(find.text('Xem phụ lục, đặt cọc'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Phụ lục số 02, hiệu lực 01/12/2026, Chờ ký'), findsOneWidget);
-    expect(find.text('Phụ lục số 01, hiệu lực 15/11/2026, Đã hủy'), findsOneWidget);
+    expect(backend.requests.map((r) => r.url.path), isNot(contains('/api/v1/contracts')));
+    expect(find.text('Xem phụ lục, đặt cọc'), findsNothing);
   });
 
   testWidgets('FR_028_chuaCoHopDong_bao', (tester) async {
-    final backend = FakeBackend()..on('GET', '/contracts', 200, <dynamic>[]);
+    final backend = withResident();
     await pumpScreen(tester, backend);
     expect(find.text('Chưa có hợp đồng nào.'), findsOneWidget);
   });
@@ -85,7 +64,12 @@ void main() {
 
     backend
       ..down = false
-      ..on('GET', '/contracts', 200, [contract()]);
+      ..on('GET', '/family-portal/residents', 200, [
+        {'residentId': 9, 'fullName': 'Nguyễn Văn An', 'representative': true},
+      ])
+      ..on('GET', '/family-portal/residents/9/contract', 200, {
+        'contracts': [contract()],
+      });
     await tester.tap(find.text('Tải lại'));
     await tester.pumpAndSettle();
     expect(find.text('Hợp đồng HD-031'), findsOneWidget);

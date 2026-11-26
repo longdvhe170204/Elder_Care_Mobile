@@ -67,6 +67,7 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
   CareChecklistLoad? loaded;
   String? error;
   bool busy = false;
+  bool recording = false;
   int generation = 0;
   @override
   void initState() {
@@ -184,19 +185,34 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     return saved == true;
   }
 
-  Future<bool> record(Map<String, dynamic> task, {bool reRecord = false}) async {
-    final saved = await showCareResultDialog(
-      context,
-      task: task,
-      repository: widget.repository,
-      newKey: careCommandKey,
-      resultValues: (loaded!.snapshot.content['resultValues'] as List? ?? [])
-          .map((v) => Map<String, dynamic>.from(v as Map))
-          .toList(),
-      reRecord: reRecord,
-    );
-    if (saved == true && mounted) await load();
-    return saved == true;
+  bool canRecord(Map<String, dynamic> task) =>
+      (loaded?.offline == false || widget.repository.recorder != null) &&
+      !widget.repository.pendingTaskIds.contains(task['id']) &&
+      (task['allowedCommands'] as List? ?? const []).contains('record');
+
+  // Q-446: Chỉ ghi nhận lại trực tuyến khi công việc cho phép đính chính.
+  bool canReRecord(Map<String, dynamic> task) =>
+      loaded?.offline == false && (task['allowedCommands'] as List? ?? const []).contains('reRecord');
+
+  Future<bool> record(Map<String, dynamic> task, {bool quickCompletion = false, bool reRecord = false}) async {
+    if (recording || !(reRecord ? canReRecord(task) : canRecord(task))) return false;
+    recording = true;
+    try {
+      final values = loaded?.snapshot.content['resultValues'] as List? ?? [];
+      final saved = await showCareResultDialog(
+        context,
+        task: task,
+        repository: widget.repository,
+        newKey: careCommandKey,
+        resultValues: values.map((v) => Map<String, dynamic>.from(v as Map)).toList(),
+        quickCompletion: quickCompletion,
+        reRecord: reRecord,
+      );
+      if (saved == true && mounted) await load();
+      return saved == true;
+    } finally {
+      recording = false;
+    }
   }
 
   void openFollowUps(ApiClient api, List<dynamic>? openAlerts, Object? residentId) => Navigator.of(context).push(
@@ -220,26 +236,23 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
     final pending = widget.repository.pendingTaskIds.contains(task['id']);
     final canWrite = loaded?.offline == false || widget.repository.recorder != null;
     return _TaskDetail(
-          task: task,
-          pending: pending,
-          followingLabel: followingLabel(openAlerts, task['residentId']),
-          onFollowUps: widget.alertsApi == null
-              ? null
-              : () => openFollowUps(widget.alertsApi!, openAlerts, task['residentId']),
-          agreements: [
-            for (final entry in (data['riskAgreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
-              if (entry['residentId'] == task['residentId'])
-                for (final a in (entry['agreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
-                  a['choice'] as String? ?? '',
-          ],
-          onRecord: canWrite && commands.contains('record') && !pending ? () => record(task) : null,
-          onClaim: loaded?.offline == false && commands.contains('claim') ? () => claim(task) : null,
-      // Q-446: ghi nhận lại kết quả đã ghi khi ca còn diễn ra; chỉ trực tuyến vì là bản đính chính.
-      onReRecord: loaded?.offline == false && commands.contains('reRecord')
-          ? () => record(task, reRecord: true)
-          : null,
-          onNotPerform: canWrite && commands.contains('notPerform') && !pending ? () => notPerform(task) : null,
-          onReport: widget.links != null && task['residentId'] != null ? () => report(task['residentId'] as int) : null,
+      task: task,
+      pending: pending,
+      followingLabel: followingLabel(openAlerts, task['residentId']),
+      onFollowUps: widget.alertsApi == null
+          ? null
+          : () => openFollowUps(widget.alertsApi!, openAlerts, task['residentId']),
+      agreements: [
+        for (final entry in (data['riskAgreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
+          if (entry['residentId'] == task['residentId'])
+            for (final a in (entry['agreements'] as List? ?? []).map((a) => Map<String, dynamic>.from(a as Map)))
+              a['choice'] as String? ?? '',
+      ],
+      onRecord: canRecord(task) ? () => record(task) : null,
+      onClaim: loaded?.offline == false && commands.contains('claim') ? () => claim(task) : null,
+      onReRecord: canReRecord(task) ? () => record(task, reRecord: true) : null,
+      onNotPerform: canWrite && commands.contains('notPerform') && !pending ? () => notPerform(task) : null,
+      onReport: widget.links != null && task['residentId'] != null ? () => report(task['residentId'] as int) : null,
     );
   }
 
@@ -275,17 +288,39 @@ class _CareChecklistScreenState extends State<CareChecklistScreen> {
       for (final t in tasks)
         if ((t['residentCard'] as Map?)?['fullName'] case final String name) t['residentId']: name,
     };
-    Widget taskRow(Map<String, dynamic> task) => _ChecklistRow(
-      icon: _taskIcon(task),
-      title: task['taskType'] as String? ?? '',
-      subtitle: _taskLine(task),
-      notes: [
-        if (widget.repository.pendingTaskIds.contains(task['id'])) 'Chưa đồng bộ',
-        if (task['awaitingRemeasurementConfirmation'] == true) 'Chờ xác nhận đo lại',
-        ?followingLabel(openAlerts, task['residentId']),
-      ],
-      onTap: () => openTask(task),
-    );
+    Widget taskRow(Map<String, dynamic> task) {
+      final title = task['taskType'] as String? ?? '';
+      final row = _ChecklistRow(
+        icon: _taskIcon(task),
+        title: title,
+        subtitle: _taskLine(task),
+        notes: [
+          if (widget.repository.pendingTaskIds.contains(task['id'])) 'Chưa đồng bộ',
+          if (task['awaitingRemeasurementConfirmation'] == true) 'Chờ xác nhận đo lại',
+          ?followingLabel(openAlerts, task['residentId']),
+        ],
+        onTap: () => openTask(task),
+      );
+      if (task['resultType'] != 'PERFORMED' || !canRecord(task)) return row;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row,
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 8),
+            child: TextButton(
+              onPressed: busy ? null : () => record(task, quickCompletion: true),
+              child: Semantics(
+                label: 'Đánh dấu hoàn thành: $title',
+                excludeSemantics: true,
+                child: const Text('Đánh dấu hoàn thành'),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     const open = {'OVERDUE', 'DUE', 'NOT_YET_DUE'};
     final groups = <(String, Color, List<Map<String, dynamic>>)>[
       ('Quá hạn', scheme.error, tasks.where((t) => t['status'] == 'OVERDUE').toList()),

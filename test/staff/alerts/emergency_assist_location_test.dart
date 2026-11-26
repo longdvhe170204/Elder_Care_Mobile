@@ -23,7 +23,12 @@ class _Location implements SosLocationSource {
   @override
   Future<SosPosition?> current() async {
     sent++;
-    return SosPosition(latitude: 10.77, longitude: 106.69, accuracyMeters: 12, measuredAt: DateTime.utc(2026, 11, 9, 3));
+    return SosPosition(
+      latitude: 10.77,
+      longitude: 106.69,
+      accuracyMeters: 12,
+      measuredAt: DateTime.utc(2026, 11, 9, 3),
+    );
   }
 }
 
@@ -41,11 +46,11 @@ Future<void> press(WidgetTester tester, FakeBackend backend, SosLocationSource l
       ),
     ),
   );
+  // Mở màn là đã bấm nút Khẩn cấp: tự đếm ngược 5 giây rồi gửi
   await tester.pump();
-  await tester.tap(find.text('Gọi hỗ trợ khẩn cấp'));
-  await tester.pump();
-  await tester.tap(find.text('Gửi sau 3 giây, chạm để gửi ngay'));
-  await tester.pump();
+  for (var i = 0; i < 5; i++) {
+    await tester.pump(const Duration(seconds: 1));
+  }
   await tester.pump();
   await tester.pump();
 }

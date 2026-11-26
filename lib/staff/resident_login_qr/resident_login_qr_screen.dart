@@ -9,6 +9,7 @@ import '../../common/api/problem_message.dart';
 import '../../common/format/date_time.dart';
 import '../../common/notifications/notification_api.dart' show newIdempotencyKey;
 import '../../common/theme/app_theme.dart';
+import '../../common/widgets/person_picker_field.dart';
 
 /// Nhãn xác nhận của chính người cao tuổi (api-002 `ResidentConsent.method`), cùng chữ với web `accountLabels.js`.
 const consentMethodLabels = {'REQUESTED': 'Tự yêu cầu', 'AGREED': 'Đồng ý'};
@@ -330,15 +331,15 @@ class _ResidentQrState extends State<_ResidentQr> {
             child: Text(_methodError!, style: text.bodySmall?.copyWith(color: theme.colorScheme.error)),
           ),
         const SizedBox(height: 8),
-        TextField(
+        // Demo 2026-11-25: chọn nhân viên đã nghe theo tên; không tải được danh sách thì nhập mã như trước
+        PersonPickerField(
+          load: () => loadStaffOptions(widget.api),
           controller: _staffId,
-          keyboardType: TextInputType.number,
+          label: 'Nhân viên đã nghe',
+          fallbackLabel: 'Mã hồ sơ nhân viên đã nghe',
+          helperText: 'Người cao tuổi nói trực tiếp với nhân viên này.',
+          errorText: _submitted ? _staffError : null,
           onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            labelText: 'Mã hồ sơ nhân viên đã nghe',
-            helperText: 'Người cao tuổi nói trực tiếp với nhân viên này.',
-            errorText: _submitted ? _staffError : null,
-          ),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../common/api/api_client.dart';
+import '../../common/format/date_time.dart';
 import '../../common/theme/app_theme.dart';
 import 'care_checklist_repository.dart';
 
@@ -13,6 +14,7 @@ Future<bool?> showCareResultDialog(
   required CareChecklistRepository repository,
   required String Function() newKey,
   List<Map<String, dynamic>> resultValues = const [],
+  bool quickCompletion = false,
   bool reRecord = false,
 }) => showDialog<bool>(
   context: context,
@@ -26,15 +28,14 @@ Future<bool?> showCareResultDialog(
       newKey: newKey,
       resultValues: resultValues,
       dialog: true,
+      quickCompletion: quickCompletion,
       reRecord: reRecord,
     ),
   ),
 );
 
-/// Form ghi nhận kết quả của một công việc (Figma "Checklist / Modal ghi nhận kết quả"): ô kết quả theo loại, Ghi chú
-/// kết quả, Lý do hoàn thành trễ khi công việc Quan trọng/Bắt buộc, nút Lưu kết quả. Không có ô và không gửi thời điểm
-/// thực hiện: backend lấy giờ lúc nhận lệnh (giờ thiết bị chỉ đi kèm bản ghi ngoại tuyến), tránh lệch đồng hồ thiết bị
-/// so với máy chủ làm bị từ chối "ngoài khoảng được ghi".
+/// Form ghi nhận kết quả của một công việc. Backend lấy giờ lúc nhận lệnh.
+/// Khi đánh dấu một việc đã hoàn thành trước đó, nhân viên nhập giờ thực tế.
 class CareResultForm extends StatefulWidget {
   const CareResultForm({
     super.key,
@@ -45,8 +46,9 @@ class CareResultForm extends StatefulWidget {
     this.onRecord,
     this.commandContext = '',
     this.dialog = false,
+    this.quickCompletion = false,
     this.reRecord = false,
-  });
+  }) : assert(!quickCompletion || !reRecord);
   final Map<String, dynamic> task;
   final CareChecklistRepository? repository;
   final Future<void> Function(Map<String, dynamic> body, String key)? onRecord;
@@ -56,6 +58,7 @@ class CareResultForm extends StatefulWidget {
 
   /// Trong hộp thoại: tiêu đề lớn có nút đóng; nằm trong màn khác thì tiêu đề thường, không nút đóng.
   final bool dialog;
+  final bool quickCompletion;
 
   /// Q-446: ghi nhận lại kết quả đã ghi (đính chính): lý do bắt buộc, không gửi thời điểm thực hiện, lý do trễ.
   final bool reRecord;
@@ -67,9 +70,11 @@ class _CareResultFormState extends State<CareResultForm> {
   final numeric = TextEditingController(),
       note = TextEditingController(),
       reason = TextEditingController(),
-      behavior = TextEditingController();
+      behavior = TextEditingController(),
+      performed = TextEditingController();
   String? code, occurred, error, signature, retryKey;
-  bool busy = false, needsConfirmation = false, confirmed = false;
+  bool busy = false, needsConfirmation = false, confirmed = false, completedEarlier = false;
+  bool get needsPerformedAt => widget.quickCompletion && completedEarlier;
   static const labels = {
     'ML': 'Lượng nước (ml)',
     'ITEM_QUANTITY': 'Số lượng',
@@ -104,12 +109,35 @@ class _CareResultFormState extends State<CareResultForm> {
     note.dispose();
     reason.dispose();
     behavior.dispose();
+    performed.dispose();
     super.dispose();
   }
 
   Future<void> save() async {
+    if (busy) return;
     final type = widget.task['resultType'] as String;
     final value = num.tryParse(numeric.text);
+    DateTime? performedAt;
+    if (needsPerformedAt) {
+      final text = performed.text.trim();
+      if (text.isEmpty) {
+        setState(() => error = 'Nhập thời điểm thực tế đã thực hiện.');
+        return;
+      }
+      final match = RegExp(r'^(\d{2})/(\d{2})/(\d{4}) (\d{2}):(\d{2})$').firstMatch(text);
+      performedAt = match == null
+          ? null
+          : DateTime.tryParse('${match[3]}-${match[2]}-${match[1]}T${match[4]}:${match[5]}:00+07:00');
+      if (performedAt == null || formatDateTime(performedAt) != text) {
+        setState(() => error = 'Nhập ngày giờ hợp lệ dạng dd/MM/yyyy HH:mm.');
+        return;
+      }
+      final from = DateTime.tryParse(widget.task['windowFrom'] as String? ?? '');
+      if (performedAt.isAfter(DateTime.now()) || (from != null && performedAt.isBefore(from))) {
+        setState(() => error = 'Nhập giờ từ đầu khung thực hiện đến thời điểm hiện tại.');
+        return;
+      }
+    }
     if ((labels.containsKey(type) && (value == null || !value.isFinite)) ||
         (needsCode(type) && code == null) ||
         (type == 'BEHAVIOR' && (occurred == null || (occurred == 'yes' && behavior.text.trim().isEmpty)))) {
@@ -131,6 +159,7 @@ class _CareResultFormState extends State<CareResultForm> {
       if (note.text.isNotEmpty) 'note': note.text,
       if (reason.text.isNotEmpty && !widget.reRecord) 'reason': reason.text,
       if (confirmed) 'upperLimitConfirmed': true,
+      if (performedAt != null) 'performedAt': performedAt.toUtc().toIso8601String(),
     };
     final nextSignature = jsonEncode({'body': body, 'context': widget.commandContext, 'reason': reason.text});
     if (signature != nextSignature) {
@@ -170,6 +199,11 @@ class _CareResultFormState extends State<CareResultForm> {
     final type = widget.task['resultType'] as String;
     final supported =
         labels.containsKey(type) || choices.containsKey(type) || ['PERFORMED', 'MOOD', 'BEHAVIOR'].contains(type);
+    final (title, submitLabel) = switch ((widget.quickCompletion, widget.reRecord)) {
+      (true, _) => ('Đánh dấu hoàn thành', 'Xác nhận hoàn thành'),
+      (_, true) => ('Ghi nhận lại', 'Lưu ghi nhận lại'),
+      _ => ('Ghi nhận kết quả', 'Lưu kết quả'),
+    };
     Widget field(String label, Widget input) => Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -212,7 +246,7 @@ class _CareResultFormState extends State<CareResultForm> {
                 child: Semantics(
                   header: true,
                   child: Text(
-                    widget.reRecord ? 'Ghi nhận lại' : 'Ghi nhận kết quả',
+                    title,
                     style: (widget.dialog ? theme.textTheme.headlineSmall : theme.textTheme.titleLarge)?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -277,6 +311,31 @@ class _CareResultFormState extends State<CareResultForm> {
             ),
           ),
         if (supported) ...[
+          if (widget.quickCompletion)
+            RadioGroup<bool>(
+              groupValue: completedEarlier,
+              onChanged: (value) {
+                if (!busy) {
+                  setState(() {
+                    completedEarlier = value ?? false;
+                    error = null;
+                  });
+                }
+              },
+              child: Column(
+                children: [
+                  RadioListTile<bool>(value: false, enabled: !busy, title: const Text('Vừa hoàn thành')),
+                  RadioListTile<bool>(value: true, enabled: !busy, title: const Text('Đã hoàn thành trước đó')),
+                ],
+              ),
+            ),
+          if (needsPerformedAt)
+            TextField(
+              controller: performed,
+              enabled: !busy,
+              keyboardType: TextInputType.datetime,
+              decoration: const InputDecoration(labelText: 'Thời điểm thực hiện (dd/MM/yyyy HH:mm)'),
+            ),
           field(
             'Ghi chú kết quả',
             TextField(
@@ -322,7 +381,7 @@ class _CareResultFormState extends State<CareResultForm> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.menu)),
               ),
               onPressed: busy ? null : save,
-              child: Text(busy ? 'Đang lưu…' : widget.reRecord ? 'Lưu ghi nhận lại' : 'Lưu kết quả'),
+              child: Text(busy ? 'Đang lưu…' : submitLabel),
             ),
           ),
         ],

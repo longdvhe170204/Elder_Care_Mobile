@@ -41,13 +41,13 @@ void main() {
       });
     await pump(tester, b);
 
-    expect(find.text('Còn nợ 9.100.000 đồng'), findsOneWidget);
-    expect(find.text('Tiền cọc 10.000.000 đồng'), findsOneWidget);
+    expect(find.text('Còn nợ 9.100.000 đ'), findsOneWidget);
+    expect(find.text('Tiền cọc 10.000.000 đ'), findsOneWidget);
     expect(find.text('NCT7K2M9XA'), findsOneWidget);
     expect(find.byType(QrImageView), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Thanh toán bảng chi phí'), 200);
     expect(find.text('Thanh toán bảng chi phí'), findsOneWidget);
-    expect(find.text('-9.300.000 đồng'), findsOneWidget);
+    expect(find.text('-9.300.000 đ'), findsOneWidget);
   });
 
   testWidgets('FR_003_chuaCoTaiKhoanThu_khongCoMaQr', (tester) async {

@@ -27,6 +27,48 @@ void main() {
     expect(find.text('Còn khoản chưa có đơn giá'), findsOneWidget);
   });
 
+  // Demo 2026-11-25: tiền dạng xxx.xxx.xxx đ; bảng kỳ cuối nói rõ đã trừ vào số dư để người thân biết khoản phải trả
+  testWidgets('FR_037_tien_ngan_nghin_va_bang_ky_cuoi_da_tru_so_du', (tester) async {
+    final api = ApiClient(
+      baseUrl: 'http://localhost',
+      httpClient: MockClient((request) async {
+        final Object body = [
+          {
+            'id': 2,
+            'period': '2026-11',
+            'total': 1550000,
+            'finalPeriod': true,
+            'statementType': 'REGULAR',
+            'items': [
+              {
+                'description': 'Phí lưu trú',
+                'incurredOn': '2026-11-20',
+                'quantity': 1,
+                'unit': 'ngày',
+                'unitPrice': 300000,
+                'amount': 300000,
+              },
+            ],
+            'totalsByType': <Object>[],
+          },
+        ];
+        return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json; charset=utf-8'});
+      }),
+    );
+    await tester.pumpWidget(MaterialApp(home: FamilyCostsScreen(api: api, residentId: 7)));
+    await tester.pumpAndSettle();
+    expect(find.text('Kỳ 11/2026 · 1.550.000 đ'), findsOneWidget);
+    expect(find.textContaining('đồng'), findsNothing);
+    await tester.tap(find.text('Kỳ 11/2026 · 1.550.000 đ'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Tổng bảng kỳ cuối đã được trừ vào số dư. Xem số dư, còn nợ và cách nộp tiền ở mục Số dư.'),
+      findsOneWidget,
+    );
+    expect(find.text('300.000 đ'), findsOneWidget);
+    expect(find.textContaining('Đơn giá 300.000 đ'), findsOneWidget);
+  });
+
   testWidgets('FR_043_403_khong_hien_du_lieu_chi_phi', (tester) async {
     final api = ApiClient(
       baseUrl: 'http://localhost',

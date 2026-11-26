@@ -242,7 +242,10 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
             for (final c in _contracts!)
               DropdownMenuItem(value: c['id'] as int, child: Text('Hợp đồng ${c['contractNumber']}')),
           ],
-          onChanged: (v) => setState(() => _contractId = v),
+          onChanged: (v) => setState(() {
+            _contractId = v;
+            _value = null;
+          }),
         ),
         if (contract != null) ...[
           const SizedBox(height: 4),
@@ -271,7 +274,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
         if (_type != null) ...[
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            key: ValueKey(_type),
+            key: ValueKey('$_contractId-$_type'),
             initialValue: _value,
             decoration: InputDecoration(
               labelText: 'Giá trị mới',
