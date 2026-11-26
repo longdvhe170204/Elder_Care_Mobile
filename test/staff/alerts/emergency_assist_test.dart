@@ -7,12 +7,13 @@ import 'package:mobile/staff/alerts/emergency_assist_screen.dart';
 
 import '../../support/fake_backend.dart';
 
-// 007 T102 (US13; FR-047i, FR-047j, FR-047k): đếm ngược 3 giây có Hủy, chạm lần hai gửi ngay; trạng thái người tiếp
-// nhận; chi tiết một lần; ngoài ca hiện số của viện; Gọi 115 ghi lượt gọi rồi mở trình quay số.
+// 007 T102 (US13; FR-047i, FR-047j, FR-047k; BR-M05-29): bấm nút Khẩn cấp ở đầu màn là mở màn này và tự đếm ngược 5 giây
+// (như nút SOS), chỉ một nút Hủy; hết giờ gửi; trạng thái người tiếp nhận; chọn sự việc, nơi bằng ô lớn, mỗi mục một
+// lần; ngoài ca hiện số của viện; Gọi 115 ghi lượt gọi rồi mở trình quay số.
 
 final dialed = <String>[];
 
-Future<void> pumpScreen(WidgetTester tester, FakeBackend backend) async {
+Future<void> pumpScreen(WidgetTester tester, FakeBackend backend, {bool autoStart = true}) async {
   tester.view.physicalSize = const Size(800, 2000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -22,6 +23,7 @@ Future<void> pumpScreen(WidgetTester tester, FakeBackend backend) async {
       home: Scaffold(
         body: EmergencyAssistScreen(
           api: backend.client(),
+          autoStart: autoStart,
           dial: (phone) async {
             dialed.add(phone);
             return true;
@@ -31,6 +33,14 @@ Future<void> pumpScreen(WidgetTester tester, FakeBackend backend) async {
       ),
     ),
   );
+  await tester.pump();
+}
+
+Future<void> waitCountdown(WidgetTester tester) async {
+  for (var i = 0; i < assistCountdownSeconds; i++) {
+    await tester.pump(const Duration(seconds: 1));
+  }
+  await tester.pump();
   await tester.pump();
 }
 
@@ -44,14 +54,14 @@ void main() {
     dialed.clear();
   });
 
-  testWidgets('FR_047i_demNguoc3Giay_huyThiKhongGui', (tester) async {
+  testWidgets('FR_047i_moManTuDemNguoc_motNutHuy_huyThiKhongGui', (tester) async {
     await pumpScreen(tester, backend);
-    await tester.tap(find.text('Gọi hỗ trợ khẩn cấp'));
-    await tester.pump();
-    expect(find.text('Gửi sau 3 giây, chạm để gửi ngay'), findsOneWidget);
+    expect(find.text('Gửi yêu cầu hỗ trợ sau'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
+    expect(find.text('Chạm Hủy nếu bấm nhầm'), findsOneWidget);
 
     await tester.tap(find.text('Hủy'));
-    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 6));
 
     expect(backend.calls('POST', '/emergency-assist'), isEmpty);
     expect(find.text('Gọi hỗ trợ khẩn cấp'), findsOneWidget);
@@ -60,15 +70,12 @@ void main() {
   testWidgets('FR_047i_hetDemNguoc_guiKemIdempotencyKey_hienTrangThai', (tester) async {
     backend.on('POST', '/emergency-assist', 201, sent);
     await pumpScreen(tester, backend);
-    await tester.tap(find.text('Gọi hỗ trợ khẩn cấp'));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
+    await waitCountdown(tester);
 
     final call = backend.calls('POST', '/emergency-assist').single;
     expect(call.headers['Idempotency-Key'], isNotEmpty);
-    expect(find.text('Đã gửi, đang chờ người tiếp nhận'), findsOneWidget);
+    expect(find.text('Đã gửi'), findsOneWidget);
+    expect(find.text('Đang chờ người tiếp nhận'), findsOneWidget);
 
     backend.on('GET', '/emergency-assist/current', 200, {...sent, 'status': 'ARRIVED', 'receiverName': 'Trần Thu Hà'});
     await tester.pump(const Duration(seconds: 5));
@@ -77,25 +84,25 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('FR_047i_chamLanHai_guiNgay_chonChiTietMotLan', (tester) async {
+  testWidgets('FR_047i_chonSuViecVaNoi_bangO_moiMucMotLan', (tester) async {
     backend.on('POST', '/emergency-assist', 201, sent);
     backend.on('POST', '/emergency-assist/20/details', 204);
     await pumpScreen(tester, backend);
-    await tester.tap(find.text('Gọi hỗ trợ khẩn cấp'));
-    await tester.pump();
-    await tester.tap(find.text('Gửi sau 3 giây, chạm để gửi ngay'));
-    await tester.pump();
-    await tester.pump();
+    await waitCountdown(tester);
     expect(backend.calls('POST', '/emergency-assist'), hasLength(1));
 
     await tester.tap(find.text('Ngã'));
     await tester.pump();
-    await tester.tap(find.text('Kích động, bạo lực'));
+    await tester.tap(find.text('Kích động'));
+    await tester.pump();
+    await tester.tap(find.text('Hành lang'));
     await tester.pump();
 
-    final details = backend.calls('POST', '/emergency-assist/20/details');
-    expect(details, hasLength(1));
-    expect(jsonDecode(details.single.body), {'eventType': 'FALL'});
+    final details = backend.calls('POST', '/emergency-assist/20/details').map((r) => jsonDecode(r.body)).toList();
+    expect(details, [
+      {'eventType': 'FALL'},
+      {'place': 'CORRIDOR'},
+    ]);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -106,11 +113,7 @@ void main() {
       'contacts': {'facilityPhone': '0281234567', 'emergencyNumber': '115'},
     });
     await pumpScreen(tester, backend);
-    await tester.tap(find.text('Gọi hỗ trợ khẩn cấp'));
-    await tester.pump();
-    await tester.tap(find.text('Gửi sau 3 giây, chạm để gửi ngay'));
-    await tester.pump();
-    await tester.pump();
+    await waitCountdown(tester);
 
     expect(find.text('Bạn không trong ca, hãy gọi số liên hệ của viện'), findsOneWidget);
     await tester.tap(find.text('Gọi số của viện 0281234567'));
@@ -123,13 +126,9 @@ void main() {
     backend.on('POST', '/alerts/20/call-115', 201, {'id': 7, 'pressedAt': '2026-11-06T03:00:00Z'});
     backend.on('POST', '/call-115-attempts/7/result', 200);
     await pumpScreen(tester, backend);
-    await tester.tap(find.text('Gọi hỗ trợ khẩn cấp'));
-    await tester.pump();
-    await tester.tap(find.text('Gửi sau 3 giây, chạm để gửi ngay'));
-    await tester.pump();
-    await tester.pump();
+    await waitCountdown(tester);
 
-    await tester.tap(find.text('Gọi 115'));
+    await tester.tap(find.text('Gọi cấp cứu 115'));
     await tester.pump();
     await tester.pump();
     expect(backend.calls('POST', '/alerts/20/call-115'), hasLength(1));
@@ -145,8 +144,8 @@ void main() {
 
   testWidgets('FR_047k_matMang_van_quaySo115', (tester) async {
     backend.down = true;
-    await pumpScreen(tester, backend);
-    await tester.tap(find.text('Gọi 115'));
+    await pumpScreen(tester, backend, autoStart: false);
+    await tester.tap(find.text('Gọi cấp cứu 115'));
     await tester.pump();
 
     expect(dialed, ['115']);
