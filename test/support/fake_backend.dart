@@ -20,14 +20,15 @@ class FakeBackend {
   /// Mất mạng: mọi yêu cầu lỗi kết nối.
   bool down = false;
 
+  void onResponse(String method, String path, http.Response Function(http.Request) response) {
+    _routes['$method $path'] = response;
+  }
+
   /// `headers`: header phản hồi thêm, ví dụ `etag` của `GET /assessments/{id}`.
   /// Phản hồi 200 tính theo yêu cầu (ví dụ khác nhau theo tham số truy vấn).
   void onRequest(String method, String path, Object? Function(http.Request request) body) {
-    _routes['$method $path'] = (request) => http.Response.bytes(
-      utf8.encode(jsonEncode(body(request))),
-      200,
-      headers: {'content-type': 'application/json'},
-    );
+    _routes['$method $path'] = (request) =>
+        http.Response.bytes(utf8.encode(jsonEncode(body(request))), 200, headers: {'content-type': 'application/json'});
   }
 
   void on(String method, String path, int status, [Object? body, Map<String, String> headers = const {}]) {
@@ -101,10 +102,12 @@ OfflineQueue memoryQueue(SessionController s) {
   return OfflineQueue(OfflineDatabase(NativeDatabase.memory()), s.api);
 }
 
-/// Máy chưa gắn tài khoản người cao tuổi mở màn đăng nhập chung: bấm nút người cao tuổi để tới màn quét mã.
+/// Từ màn đăng nhập chung, bấm nút người cao tuổi để tới màn quét mã.
 Future<void> openResidentLogin(WidgetTester tester) async {
   final choice = find.text('Quét mã QR cho người cao tuổi');
   if (choice.evaluate().isEmpty) return;
+  await tester.ensureVisible(choice);
+  await tester.pumpAndSettle();
   await tester.tap(choice);
   await tester.pumpAndSettle();
 }

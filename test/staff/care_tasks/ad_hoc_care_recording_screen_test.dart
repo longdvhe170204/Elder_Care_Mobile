@@ -47,7 +47,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Uống nước').last);
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
     await tester.ensureVisible(find.text('Lưu kết quả'));
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
@@ -64,6 +64,12 @@ void main() {
     await tester.ensureVisible(find.text('Lưu kết quả'));
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
+    // Form cao hơn (nhãn trên ô, ô ghi chú nhiều dòng): cuộn về đầu danh sách để thấy thông báo.
+    await tester.scrollUntilVisible(
+      find.text('Đã lưu ghi nhận phát sinh.'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Đã lưu ghi nhận phát sinh.'), findsOneWidget);
     expect((await queue.synced(7)).map((r) => r.idempotencyKey).toSet(), {'key-1', 'key-2'});
   });
@@ -108,7 +114,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Uống nước').last);
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Lượng nước (ml)'), '200');
+    await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
     await tester.ensureVisible(find.text('Lưu kết quả'));
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();

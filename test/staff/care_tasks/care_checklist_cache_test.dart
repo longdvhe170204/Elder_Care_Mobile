@@ -39,6 +39,13 @@ class FixtureChecklistGateway implements CareChecklistGateway {
 
   @override
   Future<void> claim(int taskId, String key) async {}
+
+  final List<List<Object?>> reRecordings = [];
+  @override
+  Future<void> reRecord(int taskId, Map<String, dynamic> content, String reason, String key) async {
+    reRecordings.add([taskId, content, reason, key]);
+    if (commandFailure != null) throw commandFailure!;
+  }
 }
 
 void main() {

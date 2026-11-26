@@ -57,11 +57,10 @@ void main() {
   }
 
   Future<void> toOtherTab(WidgetTester tester) async {
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Tra cứu')));
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Tài khoản')));
     await tester.pumpAndSettle();
   }
 
-  // Spec 2026-11-20: tab đầu là Ca của tôi (Figma); bấm tab Thông báo mở hộp.
   Future<void> toInbox(WidgetTester tester) async {
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Thông báo')));
     await tester.pumpAndSettle();

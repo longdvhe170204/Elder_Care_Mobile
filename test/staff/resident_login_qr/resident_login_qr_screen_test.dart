@@ -151,8 +151,7 @@ void main() {
     expect(find.text('Tạo mã QR'), findsNothing);
   });
 
-  // Spec 2026-11-20: Phê duyệt chỉ ở web; Mã đăng nhập ở nhóm việc của Điều dưỡng trong Thêm.
-  testWidgets('DESIGN_15_4_mucThem_moMaDangNhap_khongPheDuyet', (tester) async {
+  testWidgets('nhanVien_moMaDangNhapTuTrangChu', (tester) async {
     backend.on('GET', '/me', 200, user('STAFF'));
     final store = MemoryStore();
     await store.write(SessionController.tokenKey, 'session-1');
@@ -167,15 +166,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(NavigationDestination, 'Phê duyệt'), findsNothing);
-    await tester.tap(find.widgetWithText(NavigationDestination, 'Thêm'));
+    await tester.scrollUntilVisible(find.text('Mã đăng nhập'), 160);
     await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsNothing);
+    expect(find.text('Phê duyệt'), findsOneWidget);
 
     await tester.tap(find.text('Mã đăng nhập'));
     await tester.pumpAndSettle();
     expect(find.text('Nguyễn Thị Lan'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('Mã đăng nhập'), findsOneWidget);
   });

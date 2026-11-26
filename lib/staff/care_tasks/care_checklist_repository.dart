@@ -28,6 +28,10 @@ class CareChecklistRepository {
     }
   }
 
+  /// Ghi nhận lại (Q-446) chỉ gửi trực tuyến: đính chính không vào hàng đợi ngoại tuyến.
+  Future<void> reRecord(int taskId, Map<String, dynamic> content, String reason, String key) =>
+      gateway.reRecord(taskId, content, reason, key);
+
   Future<void> notPerform(int taskId, int reasonTypeId, String? note, String key) async {
     lastQueued = false;
     if (recorder != null) {

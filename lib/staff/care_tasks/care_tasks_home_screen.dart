@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/offline/offline_queue.dart';
+import '../../common/widgets/header_app_bar.dart';
 import '../../common/widgets/page_body.dart';
 import '../handover/handover_screen.dart';
 import '../incidents/record_incident_screen.dart';
@@ -176,8 +177,8 @@ class _CareTasksHomeScreenState extends State<CareTasksHomeScreen> {
 CareChecklistLinks apiCareChecklistLinks(ApiClient api) => CareChecklistLinks(
   openHandover: (context, shiftId) => Navigator.of(context).push<void>(
     MaterialPageRoute(
-      builder: (_) => Scaffold(
-        appBar: AppBar(title: const Text('Bàn giao ca')),
+      builder: (context) => Scaffold(
+        appBar: headerAppBar(context, title: 'Bàn giao ca'),
         body: HandoverScreen(api: api, initialShiftId: shiftId),
       ),
     ),

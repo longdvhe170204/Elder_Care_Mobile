@@ -7,7 +7,7 @@ import 'package:mobile/common/auth/session_controller.dart';
 import '../../support/fake_backend.dart';
 
 void main() {
-  testWidgets('FR_049_careRemainsReachableThroughMoreAtLargeText', (tester) async {
+  testWidgets('FR_049_careRemainsReachableFromHomeAtLargeText', (tester) async {
     tester.view.physicalSize = const Size(320, 1000);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -24,8 +24,8 @@ void main() {
     await current.start();
     await tester.pumpWidget(ElderCareApp(session: current, queue: memoryQueue(current)));
     await tester.pumpAndSettle();
-    expect(find.byType(NavigationDestination), findsNWidgets(5));
-    await tester.tap(find.widgetWithText(NavigationDestination, 'Checklist'));
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
+    await tester.tap(find.text('Checklist ca'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Tuần trước'), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -9,7 +9,7 @@ import 'package:mobile/resident/sos/sos_button.dart';
 import 'support/fake_backend.dart';
 
 // 000 T006, T007 (Q-346, Q-365): app chung mở đăng nhập rồi chuyển sang phần nhân viên, người thân hoặc người cao
-// tuổi theo loại tài khoản của phiên; máy đã gắn tài khoản người cao tuổi vào thẳng màn quét mã (002 FR-014a).
+// tuổi theo loại tài khoản của phiên.
 
 Widget fakeScanner(void Function(String code) onCode) => const SizedBox.shrink();
 
@@ -64,14 +64,15 @@ void main() {
     expect(find.text('Tôi là'), findsNothing);
   });
 
-  testWidgets('FR_014a_mayDaGanNguoiCaoTuoi_vaoThangManQuetMa', (tester) async {
+  testWidgets('FR_014a_mayDaGanNguoiCaoTuoi_vanCoManDangNhapChung', (tester) async {
     store.values[SessionController.deviceTokenKey] = 'device-token-1';
     final s = session(backend, store, FakeBiometric(available: false));
     await s.start();
     await tester.pumpWidget(ElderCareApp(session: s, queue: memoryQueue(s), scannerBuilder: fakeScanner));
     await tester.pumpAndSettle();
 
-    expect(find.text('Đặt mã QR nhân viên đưa vào trong khung.'), findsOneWidget);
-    expect(find.byKey(LoginScreen.usernameKey), findsNothing);
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
+    expect(find.text('Quét mã QR cho người cao tuổi'), findsOneWidget);
+    expect(find.byType(SosButton), findsOneWidget);
   });
 }

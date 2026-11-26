@@ -16,7 +16,7 @@ Future<void> pumpStaff(WidgetTester tester, FakeBackend backend) async {
 }
 
 void main() {
-  testWidgets('FR_054_assignmentsRequiresViewPermissionAndIsReachableThroughMore', (tester) async {
+  testWidgets('FR_054_assignmentsRequiresViewPermissionAndIsReachableFromHome', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
         {'function': 'SHIFT_SCHEDULE', 'operation': 'VIEW'},
@@ -25,17 +25,19 @@ void main() {
       ..on('GET', '/staff', 200, []);
 
     await pumpStaff(tester, backend);
-    expect(find.byType(NavigationDestination), findsNWidgets(5));
-    expect(find.text('Thêm'), findsOneWidget);
-    await tester.tap(find.text('Thêm'));
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
     await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
+    await tester.scrollUntilVisible(find.text('Phân công'), 180);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Phân công'));
     await tester.pumpAndSettle();
 
     expect(find.text('Chưa có ca trong tháng được xem.'), findsOneWidget);
     expect(backend.calls('GET', '/me/permissions').first.headers['Authorization'], 'Bearer test-session');
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 4);
+    expect(find.byType(NavigationBar), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -49,16 +51,13 @@ void main() {
       final backend = FakeBackend()..on('GET', '/me/permissions', 200, grants);
       await pumpStaff(tester, backend);
       expect(find.text('Phân công'), findsNothing);
-      expect(find.text('Thêm'), findsOneWidget);
-      await tester.tap(find.text('Thêm'));
       await tester.pumpAndSettle();
-      expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
       expect(find.text('Phân công'), findsNothing);
-      expect(find.byType(NavigationDestination), findsNWidgets(5));
+      expect(find.byType(NavigationDestination), findsNWidgets(3));
     });
   }
 
-  testWidgets('FR_054_moreMenuWorksAt200PercentTextOnNarrowPhone', (tester) async {
+  testWidgets('FR_054_homeGridWorksAt200PercentTextOnNarrowPhone', (tester) async {
     tester.view.physicalSize = const Size(320, 1000);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -73,9 +72,10 @@ void main() {
       ..on('GET', '/staff', 200, []);
 
     await pumpStaff(tester, backend);
-    await tester.tap(find.text('Thêm'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    await tester.scrollUntilVisible(find.text('Phân công'), 180);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Phân công'));
     await tester.pumpAndSettle();
     expect(find.text('Chưa có ca trong tháng được xem.'), findsOneWidget);
