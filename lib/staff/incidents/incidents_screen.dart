@@ -155,7 +155,11 @@ class IncidentDetailPage extends StatefulWidget {
     required this.incidentId,
     this.residents,
     this.dial = dialPhone,
+    this.autoReceive = false,
   });
+
+  /// Mở ngay sau khi chuyển từ cảnh báo: người chuyển đang xử lý nên nhận xử lý luôn (nếu được phép).
+  final bool autoReceive;
 
   final ApiClient api;
   final int incidentId;
@@ -175,7 +179,7 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
   final _keys = <String, String>{};
   Map<String, dynamic>? _call;
   String? _callResult, _error, _done;
-  bool _busy = false;
+  bool _busy = false, _autoReceived = false;
 
   @override
   void initState() {
@@ -192,6 +196,10 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
       final i = await widget.api.get('/incidents/${widget.incidentId}');
       if (!mounted || i == null) return;
       setState(() => _i = i);
+      if (widget.autoReceive && !_autoReceived && _commands.contains('receive')) {
+        _autoReceived = true;
+        unawaited(_simple('receive', 'Đã chuyển thành sự cố, bạn là người xử lý.'));
+      }
       final residentId = (i['content'] as Map?)?['residentId'] as int?;
       if (_info == null && residentId != null) {
         final info = await _dir.lookup(residentId);
@@ -266,7 +274,12 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
   Future<void> _transfer() async {
     final done = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => TransferOutScreen(api: widget.api, incidentId: widget.incidentId, residentName: _info?.name),
+        builder: (_) => TransferOutScreen(
+          api: widget.api,
+          incidentId: widget.incidentId,
+          residentName: _info?.name,
+          residentId: (_i?['content'] as Map?)?['residentId'] as int?,
+        ),
       ),
     );
     if (done == true && mounted) {

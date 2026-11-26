@@ -150,6 +150,17 @@ void main() {
       {'id': 88, 'code': 'MEDICATION', 'name': 'Sự cố liên quan đến sử dụng thuốc', 'defaultLevel': 'MEDIUM'},
     ]);
     backend.on('POST', '/alerts/5/convert-to-incident', 201, {'id': 3});
+    backend.on('GET', '/progression-types', 200, []);
+    backend.on('GET', '/incidents/3', 200, {
+      'id': 3,
+      'status': 'NEW',
+      'level': 'CRITICAL',
+      'currentTypeId': 71,
+      'content': {'residentId': 9001, 'incidentTypeId': 71, 'discoveredAt': '2026-11-26T07:28:00Z'},
+      'progressions': [],
+      'allowedCommands': ['receive'],
+    });
+    backend.on('POST', '/incidents/3/receive', 200);
     await pumpScreen(tester, backend);
     await openDetail(tester);
 
@@ -160,7 +171,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(jsonDecode(backend.calls('POST', '/alerts/5/convert-to-incident').single.body), {'incidentTypeId': 71});
-    expect(find.text('Đã chuyển thành sự cố ngã.'), findsOneWidget);
+    // Mở thẳng sự cố vừa tạo và nhận xử lý luôn
+    expect(find.text('Sự cố #3'), findsOneWidget);
+    expect(backend.calls('POST', '/incidents/3/receive'), hasLength(1));
+    expect(find.text('Đã chuyển thành sự cố, bạn là người xử lý.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('FR_087_hienDanhSachTheoDoi', (tester) async {
+    backend.on('GET', '/alerts', 200, [sos('IN_PROGRESS', [])]);
+    backend.on('GET', '/alerts/5', 200, {
+      ...sos('IN_PROGRESS', ['follow-up']),
+      'followUps': [
+        {'content': 'Cụ cần hỗ trợ uống nước', 'at': '2026-11-26T09:58:00Z', 'recordedBy': 'Hoàng Thị Dung'},
+      ],
+    });
+    await pumpScreen(tester, backend);
+    await openDetail(tester);
+    expect(find.text('Theo dõi'), findsOneWidget);
+    expect(find.text('16:58 · Hoàng Thị Dung: Cụ cần hỗ trợ uống nước'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -17,6 +17,7 @@ class TransferOutScreen extends StatefulWidget {
     required this.api,
     required this.incidentId,
     this.residentName,
+    this.residentId,
     this.dial = dialPhone,
     this.share = sharePdf,
   });
@@ -24,6 +25,9 @@ class TransferOutScreen extends StatefulWidget {
   final ApiClient api;
   final int incidentId;
   final String? residentName;
+
+  /// Để đọc dị ứng, bệnh nền hiện ở phần "Trước khi chuyển".
+  final int? residentId;
   final Future<bool> Function(String phone) dial;
   final Future<void> Function(Uint8List bytes, String name) share;
 
@@ -43,6 +47,7 @@ class _TransferOutScreenState extends State<TransferOutScreen> {
   bool _includeWishes = false, _busy = false, _submitted = false;
   String? _error;
   Map<String, dynamic>? _summary;
+  List<Map<String, dynamic>> _health = const [];
 
   @override
   void initState() {
@@ -67,12 +72,26 @@ class _TransferOutScreenState extends State<TransferOutScreen> {
       } on Exception {
         // Danh sách trống: bỏ ô nhân viên bàn giao
       }
-      if (mounted) {
-        setState(() {
-          _info = info ?? const {};
-          _staff = staff;
-        });
+      List<Map<String, dynamic>> health = const [];
+      if (widget.residentId != null) {
+        try {
+          health = (await widget.api.getList(
+            '/residents/${widget.residentId}/health-items',
+          )).cast<Map<String, dynamic>>();
+        } on Exception {
+          // Không có quyền xem sức khỏe: bỏ phần dị ứng, bệnh nền
+        }
       }
+      if (!mounted) return;
+      setState(() {
+        _info = info ?? const {};
+        _staff = staff;
+        _health = health;
+        // Gợi ý từ phiếu nguyện vọng khi điều trị: bệnh viện mong muốn điền sẵn, in kèm nguyện vọng khi có
+        final hospitals = ((_info?['treatmentWish'] as Map?)?['preferredHospitals'] as List?) ?? const [];
+        if (_unit.text.isEmpty && hospitals.isNotEmpty) _unit.text = '${(hospitals.first as Map)['name']}';
+        _includeWishes = _hasWish;
+      });
     } on Exception catch (e) {
       if (mounted) setState(() => _error = backendMessage(e));
     }
@@ -169,6 +188,8 @@ class _TransferOutScreenState extends State<TransferOutScreen> {
       children: [
         if (widget.residentName != null) Text(widget.residentName!, style: text.headlineSmall),
         Text('Từ sự cố #${widget.incidentId}', style: text.bodyMedium),
+        const SizedBox(height: 12),
+        _beforeTransfer(context),
         const SizedBox(height: 16),
         TextField(
           controller: _unit,
@@ -242,6 +263,85 @@ class _TransferOutScreenState extends State<TransferOutScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// "Trước khi chuyển": điều bác sĩ, điều dưỡng cần xem nhanh (dị ứng, bệnh nền, nguyện vọng, người nhà) để báo cho
+  /// bệnh viện; cùng nội dung sẽ in trên phiếu tóm tắt.
+  Widget _beforeTransfer(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    String names(String type) => _health
+        .where((h) => h['type'] == type)
+        .map((h) {
+          final name = (h['allergen'] as Map?)?['name'] ?? h['freeText'] ?? '';
+          final severity = h['severity'] == null ? '' : ' (${h['severity']})';
+          return '$name$severity';
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' · ');
+    final treatment = _info?['treatmentWish'] as Map?;
+    final hospitals = ((treatment?['preferredHospitals'] as List?) ?? const [])
+        .map((h) => '${(h as Map)['name']}')
+        .join(', ');
+    final eol = _info?['endOfLifeWish'] as Map?;
+    const choices = {
+      'TRANSFER_TO_HOSPITAL': 'Chuyển bệnh viện điều trị tích cực',
+      'RETURN_HOME': 'Đưa về nhà',
+      'STAY_PALLIATIVE': 'Ở lại viện chăm sóc giảm nhẹ',
+    };
+    final contact = _info?['primaryContact'] as Map?;
+    Widget row(String label, String value, {bool alert = false}) => value.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 104, child: Text(label, style: text.bodySmall)),
+                Expanded(
+                  child: Text(value, style: text.titleSmall?.copyWith(color: alert ? scheme.error : null)),
+                ),
+              ],
+            ),
+          );
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Trước khi chuyển', style: text.titleMedium),
+            if (widget.residentId != null)
+              row(
+                'Dị ứng',
+                names('ALLERGY').isEmpty ? 'Chưa ghi nhận' : names('ALLERGY'),
+                alert: names('ALLERGY').isNotEmpty,
+              ),
+            row('Bệnh nền', names('CHRONIC_CONDITION')),
+            row('Bệnh viện mong muốn', hospitals),
+            if (treatment?['askFamilyFirst'] == true)
+              row('Lưu ý', 'Hỏi gia đình trước khi chuyển (nếu không khẩn cấp)'),
+            row(
+              'Nguyện vọng cuối đời',
+              eol == null || eol['notRecorded'] == true ? 'Chưa có' : (choices[eol['choice']] ?? '${eol['choice']}'),
+            ),
+            if (contact != null)
+              Row(
+                children: [
+                  Expanded(child: row('Người liên hệ', '${contact['fullName']}')),
+                  if (contact['phoneNumber'] != null)
+                    TextButton.icon(
+                      onPressed: () => widget.dial('${contact['phoneNumber']}'),
+                      icon: const Icon(LucideIcons.phone),
+                      label: const Text('Gọi'),
+                    ),
+                ],
+              ),
+          ],
+        ),
+      ),
     );
   }
 

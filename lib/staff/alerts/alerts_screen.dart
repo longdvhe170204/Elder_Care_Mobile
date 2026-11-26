@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
 import '../incidents/bf06_shared.dart';
+import '../incidents/incidents_screen.dart' show IncidentDetailPage;
 import 'alert_labels.dart';
 import 'emergency_assist_screen.dart' show dialPhone;
 
@@ -258,12 +259,42 @@ class _AlertDetailPageState extends State<AlertDetailPage> {
       if (picked == null) return;
       body['residentId'] = picked.id;
     }
-    if (await _post('/alerts/${widget.alertId}/$command', body, command) && mounted) {
-      Navigator.of(context).pop(
-        command == 'activate-emergency'
-            ? 'Đã kích hoạt khẩn cấp và tạo sự cố.'
-            : 'Đã chuyển thành sự cố ${typeShortName(type).toLowerCase()}.',
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.api.post(
+        '/alerts/${widget.alertId}/$command',
+        body,
+        headers: {'Idempotency-Key': _keys.putIfAbsent(command, newIdempotencyKey)},
       );
+      _keys.remove(command);
+      final incident = (result?['incident'] as Map<String, dynamic>?) ?? result;
+      final incidentId = (incident?['id'] as num?)?.toInt();
+      if (!mounted) return;
+      if (incidentId == null) {
+        Navigator.of(context).pop('Đã chuyển thành sự cố ${typeShortName(type).toLowerCase()}.');
+        return;
+      }
+      // Người chuyển đang xử lý: mở thẳng sự cố vừa tạo và nhận xử lý luôn, khỏi phải đi tìm rồi bấm Tiếp nhận lại
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<String>(
+          builder: (_) => IncidentDetailPage(
+            api: widget.api,
+            incidentId: incidentId,
+            residents: widget.residents,
+            dial: widget.dial,
+            autoReceive: true,
+          ),
+        ),
+      );
+    } on ApiUnreachable {
+      if (mounted) setState(() => _error = 'Mất kết nối, lệnh chưa được gửi. Thử lại khi có mạng.');
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = backendMessage(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -507,9 +538,33 @@ class _AlertDetailPageState extends State<AlertDetailPage> {
             ),
           const SizedBox(height: 8),
         ],
+        if (c.contains('join-help'))
+          _secondary('Tôi đến giúp', () => _command('join-help', 'Đã báo bạn đang đến giúp.')),
         if (c.contains('activate-emergency')) _secondary('Kích hoạt khẩn cấp', () => _toIncident('activate-emergency')),
         if (c.contains('convert-to-incident'))
           _secondary('Chuyển thành sự cố', () => _toIncident('convert-to-incident')),
+        // Các lần ghi theo dõi hiện ngay trên nút ghi
+        if (((a['followUps'] as List?) ?? const []).isNotEmpty)
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Theo dõi', style: text.titleSmall),
+                  for (final f in ((a['followUps'] as List?) ?? const []).cast<Map<String, dynamic>>())
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '${hhmm(f['at'] as String?)} · ${f['recordedBy'] ?? ''}: ${f['content']}',
+                        style: text.bodyMedium,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         if (c.contains('follow-up')) _secondary('Ghi theo dõi', _followUp),
         if (c.contains('close')) _secondary('Đóng cảnh báo', _close),
         if (c.isEmpty) Text('Bạn chỉ xem được cảnh báo này.', style: text.bodyMedium),
