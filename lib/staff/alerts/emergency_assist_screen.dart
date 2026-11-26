@@ -3,11 +3,13 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
 import '../../resident/sos/sos_button.dart' show GeolocatorLocationSource, SosLocationSource;
+import '../incidents/bf06_shared.dart';
 
 /// Mở trình quay số của máy; `false` khi máy không mở được.
 Future<bool> dialPhone(String phone) async {
@@ -30,7 +32,11 @@ class EmergencyAssistScreen extends StatefulWidget {
     this.dial = dialPhone,
     this.pollInterval = const Duration(seconds: 5),
     this.location = const GeolocatorLocationSource(),
+    this.autoStart = true,
   });
+
+  /// Mở màn là bắt đầu đếm ngược (người dùng đã bấm nút Khẩn cấp ở đầu màn).
+  final bool autoStart;
 
   final ApiClient api;
   final Future<bool> Function(String phone) dial;
@@ -43,17 +49,14 @@ class EmergencyAssistScreen extends StatefulWidget {
   State<EmergencyAssistScreen> createState() => _EmergencyAssistScreenState();
 }
 
-const _events = [
-  ('CARDIAC_ARREST_OR_FAINTING', 'Ngừng tim, ngất'),
-  ('FALL', 'Ngã'),
-  ('AGITATION_OR_VIOLENCE', 'Kích động, bạo lực'),
-  ('OTHER', 'Khác'),
-];
+/// Đếm ngược trước khi gửi, cùng số giây với nút SOS của người cao tuổi.
+const assistCountdownSeconds = 5;
+
 const _places = [
   ('ROOM', 'Phòng'),
   ('RESTROOM', 'Nhà vệ sinh'),
   ('CORRIDOR', 'Hành lang'),
-  ('COMMON_ROOM', 'Phòng sinh hoạt chung'),
+  ('COMMON_ROOM', 'Sinh hoạt chung'),
   ('YARD', 'Sân'),
   ('OTHER', 'Nơi khác'),
 ];
@@ -82,6 +85,13 @@ class _EmergencyAssistScreenState extends State<EmergencyAssistScreen> {
   final String _callKey = _newKey();
 
   @override
+  void initState() {
+    super.initState();
+    // Bấm nút Khẩn cấp ở đầu màn là đã kích hoạt: đếm ngược ngay, chỉ còn việc Hủy nếu bấm nhầm (như nút SOS)
+    if (widget.autoStart) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _tapButton() : null);
+  }
+
+  @override
   void dispose() {
     _countdown?.cancel();
     _poll?.cancel();
@@ -94,7 +104,7 @@ class _EmergencyAssistScreenState extends State<EmergencyAssistScreen> {
       _send();
       return;
     }
-    setState(() => _secondsLeft = 3);
+    setState(() => _secondsLeft = assistCountdownSeconds);
     _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
       final left = (_secondsLeft ?? 1) - 1;
       if (left <= 0) {
@@ -231,40 +241,83 @@ class _EmergencyAssistScreenState extends State<EmergencyAssistScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         if (status == null) ...[
-          SizedBox(
-            height: 96,
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: theme.colorScheme.error,
-                foregroundColor: theme.colorScheme.onError,
-              ),
-              onPressed: _busy ? null : _tapButton,
-              child: Text(
-                _secondsLeft == null ? 'Gọi hỗ trợ khẩn cấp' : 'Gửi sau $_secondsLeft giây, chạm để gửi ngay',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onError),
+          if (_secondsLeft != null) ...[
+            const SizedBox(height: 24),
+            Semantics(
+              liveRegion: true,
+              child: Text('Gửi yêu cầu hỗ trợ sau', textAlign: TextAlign.center, style: theme.textTheme.headlineSmall),
+            ),
+            Text('$_secondsLeft', textAlign: TextAlign.center, style: theme.textTheme.displayLarge),
+            Text('Chạm Hủy nếu bấm nhầm', textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 24),
+            // Một nút duy nhất và to: bấm nhầm thì chỉ có việc hủy; hết giờ tự gửi
+            SizedBox(
+              height: 96,
+              child: FilledButton.icon(
+                onPressed: _cancel,
+                icon: const Icon(LucideIcons.x, size: 32),
+                label: Text('Hủy', style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.onPrimary)),
               ),
             ),
-          ),
-          if (_secondsLeft != null) ...[
-            const SizedBox(height: 12),
-            OutlinedButton(onPressed: _cancel, child: const Text('Hủy')),
-          ],
+          ] else
+            SizedBox(
+              height: 96,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error,
+                  foregroundColor: theme.colorScheme.onError,
+                ),
+                onPressed: _busy ? null : _tapButton,
+                child: Text(
+                  _busy ? 'Đang gửi…' : 'Gọi hỗ trợ khẩn cấp',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onError),
+                ),
+              ),
+            ),
         ] else ...[
           Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_statusText(status), style: theme.textTheme.titleMedium, semanticsLabel: _statusText(status)),
+            child: ListTile(
+              minTileHeight: 64,
+              leading: Icon(LucideIcons.circleCheck, color: theme.colorScheme.primary, size: 32),
+              title: Text('Đã gửi', style: theme.textTheme.titleMedium),
+              subtitle: Text(
+                _statusText(status).replaceFirst('Đã gửi, đang', 'Đang'),
+                semanticsLabel: _statusText(status),
+              ),
             ),
           ),
           const SizedBox(height: 16),
-          Text('Loại sự việc', style: theme.textTheme.titleSmall),
+          Text('Chuyện gì xảy ra?', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          _Choices(items: _events, selected: _eventType, onSelected: (v) => _details('eventType', v)),
+          ChoiceGrid(
+            columns: 2,
+            children: [
+              for (final (value, label, icon) in assistEvents)
+                ChoiceTile(
+                  icon: icon,
+                  label: label,
+                  selected: _eventType == value,
+                  // Mỗi trường đặt một lần: đã chọn thì khóa (FR-047i)
+                  onTap: _eventType == null ? () => _details('eventType', value) : null,
+                ),
+            ],
+          ),
           const SizedBox(height: 16),
-          Text('Nơi', style: theme.textTheme.titleSmall),
+          Text('Bạn ở đâu?', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          _Choices(items: _places, selected: _place, onSelected: (v) => _details('place', v)),
+          ChoiceGrid(
+            children: [
+              for (final (value, label) in _places)
+                ChoiceTile(
+                  icon: placeIcons[value]!,
+                  label: label,
+                  minHeight: 76,
+                  selected: _place == value,
+                  onTap: _place == null ? () => _details('place', value) : null,
+                ),
+            ],
+          ),
         ],
         if (_error != null) ...[
           const SizedBox(height: 16),
@@ -278,7 +331,18 @@ class _EmergencyAssistScreenState extends State<EmergencyAssistScreen> {
           ),
         ],
         const SizedBox(height: 16),
-        OutlinedButton(onPressed: _call115, child: const Text('Gọi 115')),
+        SizedBox(
+          height: 56,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+              side: BorderSide(color: theme.colorScheme.error, width: 1.5),
+            ),
+            onPressed: _call115,
+            icon: const Icon(LucideIcons.phone),
+            label: const Text('Gọi cấp cứu 115'),
+          ),
+        ),
         if (_call != null && _callResult == null) ...[
           const SizedBox(height: 12),
           const Text('Sau cuộc gọi, chọn kết quả:'),
@@ -298,27 +362,4 @@ class _EmergencyAssistScreenState extends State<EmergencyAssistScreen> {
       ],
     );
   }
-}
-
-class _Choices extends StatelessWidget {
-  const _Choices({required this.items, required this.selected, required this.onSelected});
-
-  final List<(String, String)> items;
-  final String? selected;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: [
-      for (final (value, label) in items)
-        ChoiceChip(
-          label: Text(label),
-          selected: selected == value,
-          // Mỗi trường đặt một lần: đã chọn thì khóa (FR-047i)
-          onSelected: selected == null ? (_) => onSelected(value) : null,
-        ),
-    ],
-  );
 }
