@@ -78,6 +78,32 @@ void main() {
     expect(backend.calls('POST', '/alerts/5/close'), hasLength(1));
   });
 
+  testWidgets('Q_418_khongCoClose_khongCoNutDong_FR_087_ghiTheoDoi', (tester) async {
+    backend.on('GET', listPath, 200, [alert('IN_PROGRESS', [])]);
+    backend.on('GET', '/alerts/5', 200, {
+      ...alert('IN_PROGRESS', ['follow-up']),
+      'followUps': [
+        {'content': 'Đo lại 160/95', 'at': '2026-11-22T01:00:00Z', 'recordedBy': 'Mai Thị Hoa'},
+      ],
+    });
+    backend.on('POST', '/alerts/5/follow-ups', 201);
+    await pumpScreen(tester, backend);
+    await tester.tap(find.text('Sụt cân'));
+    await tester.pumpAndSettle();
+    expect(find.text('Đóng cảnh báo'), findsNothing);
+    expect(find.textContaining('Đo lại 160/95'), findsOneWidget);
+
+    await tester.tap(find.text('Lưu theo dõi'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nhập kết quả theo dõi.'), findsOneWidget);
+    expect(backend.calls('POST', '/alerts/5/follow-ups'), isEmpty);
+
+    await tester.enterText(find.byType(TextField), 'Đo lại 140/90');
+    await tester.tap(find.text('Lưu theo dõi'));
+    await tester.pumpAndSettle();
+    expect(backend.calls('POST', '/alerts/5/follow-ups'), hasLength(1));
+  });
+
   testWidgets('FR_050_matKetNoi_lenhKhongDuocGui', (tester) async {
     backend.on('GET', listPath, 200, [alert('NEW', [])]);
     backend.on('GET', '/alerts/5', 200, alert('NEW', ['activate-emergency']));

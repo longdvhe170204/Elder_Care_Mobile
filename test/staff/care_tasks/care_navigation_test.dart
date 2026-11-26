@@ -27,7 +27,7 @@ void main() {
     expect(find.byType(NavigationDestination), findsNWidgets(5));
     await tester.tap(find.widgetWithText(NavigationDestination, 'Checklist'));
     await tester.pumpAndSettle();
-    expect(find.text('Checklist ca'), findsOneWidget);
+    expect(find.byTooltip('Tuần trước'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

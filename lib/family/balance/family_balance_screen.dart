@@ -19,7 +19,7 @@ const _types = {
   'DEPOSIT_REFUND': 'Hoàn cọc',
 };
 
-/// Tiền VND, dấu chấm ngăn nghìn (NFR-11), ví dụ `-9.300.000 đồng`.
+/// Tiền VND, dấu chấm ngăn nghìn (NFR-11), ví dụ `-9.300.000 đ` (demo 2026-11-25: thống nhất ký hiệu đ với web).
 String money(num amount) {
   final digits = amount.abs().round().toString();
   final grouped = StringBuffer();
@@ -27,7 +27,7 @@ String money(num amount) {
     if (i > 0 && (digits.length - i) % 3 == 0) grouped.write('.');
     grouped.write(digits[i]);
   }
-  return '${amount < 0 ? '-' : ''}$grouped đồng';
+  return '${amount < 0 ? '-' : ''}$grouped đ';
 }
 
 /// Số dư trên app người thân (017 T011; FR-003; api-017 `GET /family-portal/residents/{residentId}/balance`): số dư,

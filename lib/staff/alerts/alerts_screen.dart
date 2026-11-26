@@ -20,6 +20,7 @@ const _commandNames = {
   'close': 'Đóng cảnh báo',
   'convert-to-incident': 'Chuyển sự cố',
   'activate-emergency': 'Kích hoạt khẩn cấp',
+  'follow-up': 'Ghi theo dõi',
 };
 // Lệnh app làm được; lệnh khác (giao người, đổi mức) làm trên web.
 const _handled = ['receive', 'start-handling', 'convert-to-incident', 'activate-emergency', 'close'];
@@ -32,7 +33,8 @@ String _newKey() {
 /// Cảnh báo trên app nhân viên (007 T031; US3; FR-027, FR-029, FR-033, FR-036). Liệt kê cảnh báo đang mở theo phạm vi,
 /// mở một cảnh báo xem nguồn và các lệnh được phép (`allowedCommands`): tiếp nhận, bắt đầu xử lý, chuyển sự cố, kích
 /// hoạt khẩn cấp, đóng (kết quả bắt buộc). Mọi lệnh là trực tuyến, gửi kèm `Idempotency-Key`; kích hoạt khẩn cấp bị chặn
-/// khi mất kết nối (hiện lỗi, không xếp hàng ngoại tuyến).
+/// khi mất kết nối (hiện lỗi, không xếp hàng ngoại tuyến). Q-418: nút đóng chỉ có khi backend trả `close` (Trưởng tầng,
+/// Bác sĩ). Q-419, FR-087: cảnh báo đang mở có danh sách theo dõi và ô ghi kết quả theo dõi khi có lệnh `follow-up`.
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key, required this.api});
 
@@ -150,6 +152,7 @@ class _AlertDetail extends StatefulWidget {
 
 class _AlertDetailState extends State<_AlertDetail> {
   final _resolution = TextEditingController();
+  final _followUp = TextEditingController();
   final _keys = <String, String>{};
   String? _error;
   bool _busy = false, _closing = false;
@@ -157,6 +160,7 @@ class _AlertDetailState extends State<_AlertDetail> {
   @override
   void dispose() {
     _resolution.dispose();
+    _followUp.dispose();
     super.dispose();
   }
 
@@ -167,10 +171,11 @@ class _AlertDetailState extends State<_AlertDetail> {
     });
     try {
       await widget.api.post(
-        '/alerts/${widget.alert['id']}/$command',
+        '/alerts/${widget.alert['id']}/${command == 'follow-up' ? 'follow-ups' : command}',
         body,
         headers: {'Idempotency-Key': _keys.putIfAbsent(command, _newKey)},
       );
+      _keys.remove(command);
       widget.onChanged('${_commandNames[command]}: đã thực hiện.');
     } on ApiUnreachable {
       if (mounted) {
@@ -189,6 +194,8 @@ class _AlertDetailState extends State<_AlertDetail> {
     final a = widget.alert;
     final commands = ((a['allowedCommands'] as List?) ?? const []).cast<String>().where(_handled.contains).toList();
     final sources = ((a['sources'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final followUps = ((a['followUps'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final canFollowUp = ((a['allowedCommands'] as List?) ?? const []).contains('follow-up');
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -207,8 +214,37 @@ class _AlertDetailState extends State<_AlertDetail> {
         const SizedBox(height: 8),
         if (sources.isNotEmpty) Text('Nguồn', style: text.titleSmall),
         for (final s in sources) Text('• ${s['sourceType']} (${_levelNames[s['level']] ?? s['level']})'),
+        if (followUps.isNotEmpty || canFollowUp) ...[
+          const SizedBox(height: 8),
+          Text('Theo dõi', style: text.titleSmall),
+          if (followUps.isEmpty) Text('Chưa có lần theo dõi nào.', style: text.bodyMedium),
+          for (final f in followUps)
+            Text('• ${f['at'] ?? ''}${f['recordedBy'] != null ? ', ${f['recordedBy']}' : ''}: ${f['content']}'),
+          if (canFollowUp) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _followUp,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'Ghi kết quả theo dõi'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _busy
+                  ? null
+                  : () {
+                      final value = _followUp.text.trim();
+                      if (value.isEmpty) {
+                        setState(() => _error = 'Nhập kết quả theo dõi.');
+                        return;
+                      }
+                      _run('follow-up', {'content': value});
+                    },
+              child: const Text('Lưu theo dõi'),
+            ),
+          ],
+        ],
         const SizedBox(height: 12),
-        if (commands.isEmpty) Text('Bạn không có lệnh nào với cảnh báo này.', style: text.bodyMedium),
+        if (commands.isEmpty && !canFollowUp) Text('Bạn không có lệnh nào với cảnh báo này.', style: text.bodyMedium),
         for (final c in commands.where((c) => c != 'close'))
           Padding(
             padding: const EdgeInsets.only(bottom: 8),

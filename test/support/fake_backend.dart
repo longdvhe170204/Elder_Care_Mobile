@@ -21,6 +21,15 @@ class FakeBackend {
   bool down = false;
 
   /// `headers`: header phản hồi thêm, ví dụ `etag` của `GET /assessments/{id}`.
+  /// Phản hồi 200 tính theo yêu cầu (ví dụ khác nhau theo tham số truy vấn).
+  void onRequest(String method, String path, Object? Function(http.Request request) body) {
+    _routes['$method $path'] = (request) => http.Response.bytes(
+      utf8.encode(jsonEncode(body(request))),
+      200,
+      headers: {'content-type': 'application/json'},
+    );
+  }
+
   void on(String method, String path, int status, [Object? body, Map<String, String> headers = const {}]) {
     _routes['$method $path'] = (_) => http.Response.bytes(
       body == null ? const [] : utf8.encode(jsonEncode(body)),

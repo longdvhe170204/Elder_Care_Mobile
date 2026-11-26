@@ -39,6 +39,32 @@ class ApiCareTaskPlanningGateway implements CareTaskPlanningGateway {
     ).where((s) => !['DRAFT', 'CANCELLED'].contains(s['status'])).toList();
   }
 
+  /// Ca đã công bố bắt đầu trong khoảng ngày Việt Nam `[from, to)` cho Checklist theo tuần: người lập lịch đọc lịch các
+  /// tháng phủ khoảng đó, người khác đọc ca của mình.
+  Future<List<Map<String, dynamic>>> shiftsBetween(DateTime from, DateTime to) async {
+    String day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    bool within(Map<String, dynamic> s) {
+      final vn = DateTime.parse(s['startsAt'] as String).toUtc().add(const Duration(hours: 7));
+      final d = DateTime.utc(vn.year, vn.month, vn.day);
+      return !d.isBefore(from) && d.isBefore(to) && !['DRAFT', 'CANCELLED'].contains(s['status']);
+    }
+
+    if (await _can(api, 'SHIFT_SCHEDULE', 'CREATE')) {
+      final last = to.subtract(const Duration(days: 1));
+      final months = {
+        for (final d in [from, last]) '${d.year}-${d.month.toString().padLeft(2, '0')}',
+      };
+      return [
+        for (final month in months)
+          for (final s in (await api.getList(
+            '/shift-schedules?month=$month',
+          )).whereType<Map<String, dynamic>>().where((s) => s['status'] == 'PUBLISHED'))
+            ..._rows(s['shifts'] as List<dynamic>? ?? []).where(within),
+      ];
+    }
+    return _rows(await api.getList('/me/shifts?from=${day(from)}&to=${day(to)}')).where(within).toList();
+  }
+
   @override
   Future<CareTaskPlanningData> load(int shiftId) async {
     final source = await api.get('/shifts/$shiftId/source-data');
