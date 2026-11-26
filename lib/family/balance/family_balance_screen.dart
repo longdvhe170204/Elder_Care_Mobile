@@ -19,6 +19,9 @@ const _types = {
   'DEPOSIT_REFUND': 'Hoàn cọc',
 };
 
+// Q-451: khoản nộp (cổng chỉ trả giao dịch Đã xác nhận) có biên nhận
+const _receiptTypes = {'CASH_PAYMENT', 'BANK_TRANSFER_PAYMENT', 'DEPOSIT_RECEIPT'};
+
 /// Tiền VND, dấu chấm ngăn nghìn (NFR-11), ví dụ `-9.300.000 đ` (demo 2026-11-25: thống nhất ký hiệu đ với web).
 String money(num amount) {
   final digits = amount.abs().round().toString();
@@ -34,11 +37,20 @@ String money(num amount) {
 /// cọc, tài khoản thu của viện, mã nộp tiền và mã QR VietQR không số tiền, giao dịch Đã xác nhận (thanh toán bảng chỉ có
 /// tổng). Backend kiểm quyền xem chi phí mỗi lần; không có thanh toán trực tuyến (Q-285).
 class FamilyBalanceScreen extends StatefulWidget {
-  const FamilyBalanceScreen({super.key, required this.api, required this.residentId, required this.residentName});
+  const FamilyBalanceScreen({
+    super.key,
+    required this.api,
+    required this.residentId,
+    required this.residentName,
+    this.share = shareFile,
+  });
 
   final ApiClient api;
   final int residentId;
   final String residentName;
+
+  /// Mở, lưu, gửi tệp tải về; test thay bằng bản giả.
+  final FileSharer share;
 
   @override
   State<FamilyBalanceScreen> createState() => _FamilyBalanceScreenState();
@@ -67,6 +79,16 @@ class _FamilyBalanceScreenState extends State<FamilyBalanceScreen> {
       );
     } on Exception catch (e) {
       if (mounted) setState(() => _error = backendMessage(e));
+    }
+  }
+
+  // Q-451: biên nhận nộp tiền, số theo mã giao dịch
+  Future<void> _receipt(int id) async {
+    try {
+      final bytes = await widget.api.getBytes('/family-portal/balance-transactions/$id/receipt');
+      await widget.share(bytes, 'BN-${id.toString().padLeft(6, '0')}.pdf', 'application/pdf');
+    } on Exception catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(backendMessage(e))));
     }
   }
 
@@ -150,6 +172,8 @@ class _FamilyBalanceScreenState extends State<FamilyBalanceScreen> {
                             '${t['ledger'] == 'DEPOSIT' ? ', sổ tiền cọc' : ''}',
                             style: text.bodySmall,
                           ),
+                          if (_receiptTypes.contains(t['type']) && (t['amount'] as num) > 0)
+                            TextButton(onPressed: () => _receipt(t['id'] as int), child: const Text('Tải biên nhận')),
                         ],
                       ),
                     ),
