@@ -32,8 +32,9 @@ Future<bool?> showCareResultDialog(
 );
 
 /// Form ghi nhận kết quả của một công việc (Figma "Checklist / Modal ghi nhận kết quả"): ô kết quả theo loại, Ghi chú
-/// kết quả, Lý do hoàn thành trễ khi công việc Quan trọng/Bắt buộc, nút Lưu kết quả. Không có ô thời điểm thực hiện:
-/// thời điểm là lúc bấm Lưu ([clock]), giữ nguyên khi thử lại cùng nội dung để lệnh gửi lại vẫn trùng khóa.
+/// kết quả, Lý do hoàn thành trễ khi công việc Quan trọng/Bắt buộc, nút Lưu kết quả. Không có ô và không gửi thời điểm
+/// thực hiện: backend lấy giờ lúc nhận lệnh (giờ thiết bị chỉ đi kèm bản ghi ngoại tuyến), tránh lệch đồng hồ thiết bị
+/// so với máy chủ làm bị từ chối "ngoài khoảng được ghi".
 class CareResultForm extends StatefulWidget {
   const CareResultForm({
     super.key,
@@ -44,7 +45,6 @@ class CareResultForm extends StatefulWidget {
     this.onRecord,
     this.commandContext = '',
     this.dialog = false,
-    this.clock = DateTime.now,
     this.reRecord = false,
   });
   final Map<String, dynamic> task;
@@ -56,7 +56,6 @@ class CareResultForm extends StatefulWidget {
 
   /// Trong hộp thoại: tiêu đề lớn có nút đóng; nằm trong màn khác thì tiêu đề thường, không nút đóng.
   final bool dialog;
-  final DateTime Function() clock;
 
   /// Q-446: ghi nhận lại kết quả đã ghi (đính chính): lý do bắt buộc, không gửi thời điểm thực hiện, lý do trễ.
   final bool reRecord;
@@ -69,7 +68,7 @@ class _CareResultFormState extends State<CareResultForm> {
       note = TextEditingController(),
       reason = TextEditingController(),
       behavior = TextEditingController();
-  String? code, occurred, error, signature, retryKey, performedAt;
+  String? code, occurred, error, signature, retryKey;
   bool busy = false, needsConfirmation = false, confirmed = false;
   static const labels = {
     'ML': 'Lượng nước (ml)',
@@ -137,9 +136,7 @@ class _CareResultFormState extends State<CareResultForm> {
     if (signature != nextSignature) {
       signature = nextSignature;
       retryKey = widget.newKey();
-      performedAt = widget.clock().toUtc().toIso8601String();
     }
-    if (!widget.reRecord) body['performedAt'] = performedAt;
     setState(() {
       busy = true;
       error = null;

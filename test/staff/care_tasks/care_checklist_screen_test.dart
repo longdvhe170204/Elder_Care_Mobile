@@ -245,12 +245,12 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
-    expect(gateway.recordings.single, {'numericValue': 200, 'performedAt': isA<String>()});
+    expect(gateway.recordings.single, {'numericValue': 200});
     expect(find.text('200'), findsOneWidget);
     expect(find.text('Công việc đã được ghi nhận.'), findsOneWidget);
   });
-  // Không còn ô thời điểm thực hiện: thời điểm là lúc bấm Lưu kết quả.
-  testWidgets('FR_035_thoiDiemThucHienLayLucBamLuu', (tester) async {
+  // Không còn ô thời điểm thực hiện và không gửi giờ thiết bị: backend lấy giờ lúc nhận lệnh Lưu kết quả.
+  testWidgets('FR_035_khongGuiThoiDiemThucHien_backendLayGioLucLuu', (tester) async {
     gateway.body['tasks'] = [
       {
         'id': 1,
@@ -268,14 +268,9 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('careResult.numeric')), '200');
     expect(find.textContaining('Thời điểm thực hiện'), findsNothing);
     expect(find.text('Ghi chú kết quả'), findsOneWidget);
-    final before = DateTime.now().toUtc().subtract(const Duration(seconds: 1));
     await tester.tap(find.text('Lưu kết quả'));
     await tester.pumpAndSettle();
-    final at = DateTime.parse(gateway.recordings.single['performedAt'] as String);
-    expect(at.isUtc, isTrue);
-    expect(at.isBefore(before), isFalse);
-    expect(at.isAfter(DateTime.now().toUtc().add(const Duration(seconds: 1))), isFalse);
-    expect(gateway.recordings.single['numericValue'], 200);
+    expect(gateway.recordings.single, {'numericValue': 200});
   });
   // Q-446: việc đã Hoàn thành trong ca còn diễn ra, backend cho lệnh reRecord: Ghi nhận lại cần lý do, gửi đính chính.
   testWidgets('Q_446_ghiNhanLaiTrongCa_canLyDo_guiDinhChinh', (tester) async {
