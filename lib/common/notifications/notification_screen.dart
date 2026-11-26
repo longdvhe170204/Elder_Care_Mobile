@@ -28,11 +28,8 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
-  final _hideKey = newIdempotencyKey();
   Map<String, dynamic>? _notification;
   Object? _loadError;
-  String? _failure;
-  bool _busy = false;
 
   @override
   void initState() {
@@ -46,21 +43,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
       if (mounted) setState(() => _notification = notification);
     } on Exception catch (e) {
       if (mounted) setState(() => _loadError = e);
-    }
-  }
-
-  Future<void> _hide() async {
-    setState(() {
-      _busy = true;
-      _failure = null;
-    });
-    try {
-      await widget.notifications.hide(widget.id, _hideKey);
-      if (mounted) Navigator.of(context).pop(true);
-    } on Exception catch (e) {
-      if (mounted) setState(() => _failure = backendMessage(e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -163,14 +145,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
             ),
           ),
         if (source != null) ...[const SizedBox(height: 16), source],
-        if (_failure != null) ...[
-          const SizedBox(height: 12),
-          Text(_failure!, style: text.bodyMedium?.copyWith(color: theme.colorScheme.error)),
-        ],
-        if (viewedAt != null) ...[
-          const SizedBox(height: 16),
-          OutlinedButton(onPressed: _busy ? null : _hide, child: const Text('Ẩn khỏi danh sách')),
-        ],
       ],
     );
   }
