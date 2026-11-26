@@ -4,6 +4,7 @@ import '../../common/api/api_client.dart';
 import '../../common/api/problem_message.dart';
 import '../../common/format/date_time.dart';
 import '../../common/notifications/notification_api.dart' show newIdempotencyKey;
+import '../../common/widgets/person_picker_field.dart';
 import '../../common/widgets/status_pill.dart';
 import 'swap_labels.dart';
 
@@ -392,11 +393,13 @@ class _SwapCreateSheetState extends State<SwapCreateSheet> {
                 _loadOptions();
               },
             ),
-            TextField(
+            // Demo 2026-11-25: chọn người nhận theo tên; không tải được danh sách thì nhập mã như trước
+            PersonPickerField(
               key: const ValueKey('swap-recipient'),
+              load: () => loadStaffOptions(widget.api),
               controller: _recipient,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Mã nhân viên người nhận'),
+              label: 'Người nhận',
+              fallbackLabel: 'Mã nhân viên người nhận',
               onChanged: (_) => _loadOptions(),
             ),
             if (_kind == 'MUTUAL')

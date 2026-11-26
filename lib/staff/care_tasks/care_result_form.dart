@@ -13,11 +13,13 @@ class CareResultForm extends StatefulWidget {
     this.resultValues = const [],
     this.onRecord,
     this.commandContext = '',
+    this.quickCompletion = false,
   });
   final Map<String, dynamic> task;
   final CareChecklistRepository? repository;
   final Future<void> Function(Map<String, dynamic> body, String key)? onRecord;
   final String commandContext;
+  final bool quickCompletion;
   final String Function() newKey;
   final List<Map<String, dynamic>> resultValues;
   @override
@@ -31,7 +33,7 @@ class _CareResultFormState extends State<CareResultForm> {
       behavior = TextEditingController(),
       performed = TextEditingController();
   String? code, occurred, error, signature, retryKey;
-  bool busy = false, needsConfirmation = false, confirmed = false;
+  bool busy = false, needsConfirmation = false, confirmed = false, completedEarlier = false;
   static const labels = {
     'ML': 'Lượng nước (ml)',
     'ITEM_QUANTITY': 'Số lượng',
@@ -71,11 +73,16 @@ class _CareResultFormState extends State<CareResultForm> {
   }
 
   Future<void> save() async {
+    if (busy) return;
     final type = widget.task['resultType'] as String;
     final value = num.tryParse(numeric.text);
     String? performedAt;
-    if (performed.text.trim().isNotEmpty) {
-      final text = performed.text.trim();
+    final text = performed.text.trim();
+    if (widget.quickCompletion && completedEarlier && text.isEmpty) {
+      setState(() => error = 'Nhập thời điểm thực tế đã thực hiện.');
+      return;
+    }
+    if ((!widget.quickCompletion || completedEarlier) && text.isNotEmpty) {
       final match = RegExp(r'^(\d{2})/(\d{2})/(\d{4}) (\d{2}):(\d{2})$').firstMatch(text);
       final parsed = match == null
           ? null
@@ -83,6 +90,13 @@ class _CareResultFormState extends State<CareResultForm> {
       if (parsed == null || formatDateTime(parsed) != text) {
         setState(() => error = 'Nhập ngày giờ hợp lệ dạng dd/MM/yyyy HH:mm.');
         return;
+      }
+      if (widget.quickCompletion) {
+        final from = DateTime.tryParse(widget.task['windowFrom'] as String? ?? '');
+        if (parsed.isAfter(DateTime.now()) || (from != null && parsed.isBefore(from))) {
+          setState(() => error = 'Nhập giờ từ đầu khung thực hiện đến thời điểm hiện tại.');
+          return;
+        }
       }
       performedAt = parsed.toUtc().toIso8601String();
     }
@@ -147,7 +161,10 @@ class _CareResultFormState extends State<CareResultForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Ghi nhận kết quả', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                widget.quickCompletion ? 'Đánh dấu hoàn thành' : 'Ghi nhận kết quả',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               if (!supported) const Text('Chưa có danh mục kết quả để ghi nhận loại công việc này.'),
               if (labels.containsKey(type))
                 TextField(
@@ -194,13 +211,32 @@ class _CareResultFormState extends State<CareResultForm> {
                   decoration: const InputDecoration(labelText: 'Mô tả hành vi (bắt buộc)'),
                 ),
               if (supported) ...[
-                TextField(
-                  controller: performed,
-                  enabled: !busy,
-                  keyboardType: TextInputType.datetime,
-                  decoration: const InputDecoration(labelText: 'Thời điểm thực hiện (dd/MM/yyyy HH:mm)'),
-                ),
-                const Text('Giờ Việt Nam. Để trống để dùng thời điểm gửi ghi nhận.'),
+                if (widget.quickCompletion)
+                  RadioGroup<bool>(
+                    groupValue: completedEarlier,
+                    onChanged: (value) {
+                      if (!busy) {
+                        setState(() {
+                          completedEarlier = value ?? false;
+                          error = null;
+                        });
+                      }
+                    },
+                    child: Column(
+                      children: [
+                        RadioListTile<bool>(value: false, enabled: !busy, title: const Text('Vừa hoàn thành')),
+                        RadioListTile<bool>(value: true, enabled: !busy, title: const Text('Đã hoàn thành trước đó')),
+                      ],
+                    ),
+                  ),
+                if (!widget.quickCompletion || completedEarlier)
+                  TextField(
+                    controller: performed,
+                    enabled: !busy,
+                    keyboardType: TextInputType.datetime,
+                    decoration: const InputDecoration(labelText: 'Thời điểm thực hiện (dd/MM/yyyy HH:mm)'),
+                  ),
+                if (!widget.quickCompletion) const Text('Giờ Việt Nam. Để trống để dùng thời điểm gửi ghi nhận.'),
                 TextField(
                   controller: note,
                   enabled: !busy,
@@ -221,7 +257,10 @@ class _CareResultFormState extends State<CareResultForm> {
                     title: const Text('Xác nhận giá trị đã nhập vượt giới hạn hợp lý'),
                   ),
                 if (error != null) Text(error!),
-                FilledButton(onPressed: busy ? null : save, child: Text(busy ? 'Đang lưu…' : 'Lưu kết quả')),
+                FilledButton(
+                  onPressed: busy ? null : save,
+                  child: Text(busy ? 'Đang lưu…' : (widget.quickCompletion ? 'Xác nhận hoàn thành' : 'Lưu kết quả')),
+                ),
               ],
             ],
           ),
