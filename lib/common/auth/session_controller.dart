@@ -15,6 +15,8 @@ class UserInfo {
     required this.accountId,
     required this.type,
     this.fullName,
+    this.phoneNumber,
+    this.email,
     required this.mustChangePassword,
     this.sessionIdleTimeoutSeconds,
     this.roles = const {},
@@ -28,6 +30,8 @@ class UserInfo {
       _ => AccountType.resident,
     },
     fullName: json['fullName'] as String?,
+    phoneNumber: json['phoneNumber'] as String?,
+    email: json['email'] as String?,
     mustChangePassword: json['mustChangePassword'] == true,
     sessionIdleTimeoutSeconds: (json['sessionIdleTimeoutSeconds'] as num?)?.toInt(),
     roles: {...?(json['roles'] as List?)?.whereType<String>()},
@@ -36,6 +40,8 @@ class UserInfo {
   final int accountId;
   final AccountType type;
   final String? fullName;
+  final String? phoneNumber;
+  final String? email;
   final bool mustChangePassword;
 
   /// Thời gian không thao tác của kênh phiên (CFG-M15-10); chỉ `GET /me` trả, `null` khi kênh không tự đăng xuất.
@@ -88,8 +94,7 @@ class SessionController extends ChangeNotifier {
   SessionStatus status = SessionStatus.starting;
   UserInfo? user;
 
-  /// Máy đã gắn với tài khoản người cao tuổi (có token thiết bị): chỉ đăng nhập lại bằng mã QR, không đăng nhập được
-  /// tài khoản khác (002 FR-014a, Q-370).
+  /// Máy đã gắn với tài khoản người cao tuổi (có token thiết bị); backend chỉ cho tài khoản đó đăng nhập (002 FR-014a).
   bool boundToResident = false;
 
   /// Câu báo cho màn đăng nhập, ví dụ sau khi đổi mật khẩu.
@@ -139,20 +144,27 @@ class SessionController extends ChangeNotifier {
   }
 
   /// Mật khẩu dự phòng (002 FR-069), kênh app người cao tuổi cũng gắn máy.
-  Future<void> passwordLogin(String username, String password) async {
-    await _signedIn(
-      await api.post('/auth/login', {'username': username, 'password': password, 'channel': 'RESIDENT_APP'}),
-    );
-  }
+  Future<void> _residentPasswordLogin(String username, String password) async =>
+      _signedIn(await _requestPasswordLogin(username, password, 'RESIDENT_APP'));
 
-  /// Nhân viên, người thân đăng nhập ở màn đầu chung (002 T046, T047; FR-014a): kênh `MOBILE_APP`, backend gán kênh
-  /// phiên STAFF_APP hoặc FAMILY_APP theo loại tài khoản (đổi api-002 2026-10-28; FR-013a).
+  Future<Map<String, dynamic>?> _requestPasswordLogin(String username, String password, String channel) =>
+      api.post('/auth/login', {'username': username, 'password': password, 'channel': channel});
+
+  /// Một biểu mẫu cho cả ba loại tài khoản, dùng kênh đăng nhập theo hợp đồng api-002.
   Future<void> appLogin(String username, String password) async {
-    final response = await api.post('/auth/login', {
-      'username': username,
-      'password': password,
-      'channel': 'MOBILE_APP',
-    });
+    if (boundToResident) return _residentPasswordLogin(username, password);
+    final Map<String, dynamic>? response;
+    try {
+      response = await _requestPasswordLogin(username, password, 'MOBILE_APP');
+    } on ApiProblem catch (problem) {
+      // LoginService trả lỗi này sau khi kiểm đúng mật khẩu và xác định tài khoản người cao tuổi.
+      if (problem.status != 422 ||
+          problem.errorCode != 'INVALID_VALUE' ||
+          problem.detail != 'Người cao tuổi đăng nhập bằng mã QR') {
+        rethrow;
+      }
+      return _residentPasswordLogin(username, password);
+    }
     this.username = username;
     await store.write(usernameKey, username);
     await _signedIn(response);
@@ -162,11 +174,7 @@ class SessionController extends ChangeNotifier {
   /// thay token, màn đang mở giữ nguyên phần đang nhập; khác thì vào như đăng nhập mới (`ElderCareApp` dựng lại theo tài
   /// khoản nên không lộ phần đang nhập của người trước).
   Future<void> resume(String username, String password) async {
-    final response = await api.post('/auth/login', {
-      'username': username,
-      'password': password,
-      'channel': 'MOBILE_APP',
-    });
+    final response = await _requestPasswordLogin(username, password, 'MOBILE_APP');
     final next = UserInfo.fromJson(response!['user'] as Map<String, dynamic>);
     if (next.accountId != user?.accountId || next.mustChangePassword || response['mustChangePassword'] == true) {
       this.username = username;
@@ -194,16 +202,21 @@ class SessionController extends ChangeNotifier {
     _set(SessionStatus.signedOut);
   }
 
-  /// Đổi mật khẩu bắt buộc lần đầu (002 FR-006). Tài khoản người cao tuổi: backend kết thúc mọi phiên (BR-M15-24), nên
-  /// app về màn đăng nhập; nhân viên, người thân giữ phiên và vào app.
+  /// Đổi mật khẩu. Người cao tuổi đăng nhập lại (BR-M15-24); nhân viên, người thân giữ phiên.
   Future<void> changePassword(String currentPassword, String newPassword) async {
     await api.post('/auth/change-password', {'currentPassword': currentPassword, 'newPassword': newPassword});
-    final current = user!;
+    final current = user;
+    if (current == null) return;
     if (current.type != AccountType.resident) {
+      if (status == SessionStatus.signedIn) return;
       user = UserInfo(
         accountId: current.accountId,
         type: current.type,
         fullName: current.fullName,
+        phoneNumber: current.phoneNumber,
+        email: current.email,
+        roles: current.roles,
+        sessionIdleTimeoutSeconds: current.sessionIdleTimeoutSeconds,
         mustChangePassword: false,
       );
       return _set(SessionStatus.signedIn);

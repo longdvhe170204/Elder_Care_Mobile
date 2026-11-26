@@ -75,10 +75,8 @@ void main() {
     await pumpApp(tester, backend, store);
     await login(tester, 'dieu-duong-1', 'matkhau123');
 
-    // Đăng xuất ở cuối mục Thêm (Figma 03 · App nhân viên, spec 2026-11-20).
-    await tester.tap(find.widgetWithText(NavigationDestination, 'Thêm'));
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Tài khoản'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Đăng xuất'), 200);
     await tester.tap(find.text('Đăng xuất'));
     await tester.pumpAndSettle();
 

@@ -16,7 +16,7 @@ Future<void> pumpStaff(WidgetTester tester, FakeBackend backend) async {
 }
 
 void main() {
-  testWidgets('FR_054_handoversRequiresViewPermissionAndIsReachableThroughMore', (tester) async {
+  testWidgets('FR_054_handoversRequiresViewPermissionAndIsReachableFromHome', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
         {'function': 'SHIFT_HANDOVER', 'operation': 'VIEW'},
@@ -25,17 +25,17 @@ void main() {
       ..on('GET', '/staff', 200, []);
 
     await pumpStaff(tester, backend);
-    expect(find.byType(NavigationDestination), findsNWidgets(5));
-    expect(find.text('Thêm'), findsOneWidget);
-    await tester.tap(find.text('Thêm'));
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
     await tester.pumpAndSettle();
-    expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
     await tester.tap(find.text('Bàn giao ca'));
     await tester.pumpAndSettle();
 
     expect(find.text('Chọn ca để xem bàn giao.'), findsOneWidget);
     expect(backend.calls('GET', '/me/permissions').first.headers['Authorization'], 'Bearer test-session');
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 4);
+    expect(find.byType(NavigationBar), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
     expect(tester.takeException(), isNull);
   });
 
@@ -49,16 +49,13 @@ void main() {
       final backend = FakeBackend()..on('GET', '/me/permissions', 200, grants);
       await pumpStaff(tester, backend);
       expect(find.text('Bàn giao ca'), findsNothing);
-      expect(find.text('Thêm'), findsOneWidget);
-      await tester.tap(find.text('Thêm'));
       await tester.pumpAndSettle();
-      expect(find.text('Phê duyệt'), findsNothing); // chỉ ở web (spec 2026-11-20)
       expect(find.text('Bàn giao ca'), findsNothing);
-      expect(find.byType(NavigationDestination), findsNWidgets(5));
+      expect(find.byType(NavigationDestination), findsNWidgets(3));
     });
   }
 
-  testWidgets('FR_054_moreMenuWorksAt200PercentTextOnNarrowPhone', (tester) async {
+  testWidgets('FR_054_homeGridWorksAt200PercentTextOnNarrowPhone', (tester) async {
     tester.view.physicalSize = const Size(320, 1000);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -73,7 +70,6 @@ void main() {
       ..on('GET', '/staff', 200, []);
 
     await pumpStaff(tester, backend);
-    await tester.tap(find.text('Thêm'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Bàn giao ca'));

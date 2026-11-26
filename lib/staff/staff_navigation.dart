@@ -1,15 +1,21 @@
-/// Điều hướng app nhân viên theo vai trò (spec docs/superpowers/specs/2026-11-20-role-based-navigation-design.md mục
-/// 4, 5): vai trò (mã actor của `GET /me`) chọn tab 2 và các mục "Thêm"; quyền `/me/permissions` chỉ thu hẹp, không mở
-/// rộng. Khung thanh dưới theo Figma "03 · App nhân viên": Ca của tôi · [tab 2] · Tra cứu · Thông báo · Thêm.
+/// Điều hướng app nhân viên theo vai trò và quyền từ `/me/permissions`.
 library;
 
-/// Tab của thanh dưới (Figma "03 · App nhân viên"): Ca của tôi · [việc chính] · Tra cứu · Thông báo · Thêm.
-enum StaffTab { shift, primary, lookup, inbox, more }
+enum StaffTab {
+  home('Trang chủ', 'home'),
+  inbox('Thông báo', 'bell'),
+  account('Tài khoản', 'user');
 
-/// Tab 2: việc chính của vai trò.
+  const StaffTab(this.label, this.icon);
+
+  final String label;
+  final String icon;
+}
+
+/// Lối vào chính trên Trang chủ theo vai trò.
 enum StaffPrimary { checklist, floorToday, residents, mealSlips }
 
-/// Mục của "Thêm": nhóm việc rồi nhóm công cụ.
+/// Lối vào nghiệp vụ và tiện ích trên Trang chủ.
 enum StaffFeature {
   medicationIntake,
   familyMedication,
@@ -30,21 +36,12 @@ enum StaffFeature {
 }
 
 class StaffNavigation {
-  const StaffNavigation({
-    required this.primary,
-    required this.showLookupTab,
-    required this.showHandover,
-    required this.work,
-    required this.tools,
-  });
+  const StaffNavigation({required this.primary, required this.showHandover, required this.work, required this.tools});
 
   /// `null`: tài khoản không có vai trò dùng app nhân viên (Quản lý viện, Hành chính, Kế toán chỉ dùng web).
   final StaffPrimary? primary;
 
-  /// Bác sĩ có tab 2 là Người cao tuổi nên không có tab Tra cứu.
-  final bool showLookupTab;
-
-  /// Dòng Bàn giao ca ở Ca của tôi.
+  /// Lối vào Bàn giao ca trên Trang chủ.
   final bool showHandover;
   final List<StaffFeature> work;
   final List<StaffFeature> tools;
@@ -67,6 +64,18 @@ const _priority = [
 
 const _appRoles = {_floorManager, _doctor, _nurse, _caregiver, _kitchen};
 
+String staffRoleLabel(Set<String> roles) {
+  final role = _priority.where((entry) => roles.contains(entry.$1)).firstOrNull?.$1;
+  return switch (role) {
+    _floorManager => 'Trưởng tầng',
+    _doctor => 'Bác sĩ',
+    _nurse => 'Điều dưỡng',
+    _caregiver => 'Nhân viên chăm sóc',
+    _kitchen => 'Nhân viên bếp',
+    _ => 'Nhân viên',
+  };
+}
+
 /// Mỗi mục: vai trò được có, và điều kiện quyền (`null` là chỉ lọc theo vai trò).
 final Map<StaffFeature, (Set<String>, bool Function(_Grants)?)> _features = {
   StaffFeature.medicationIntake: ({_nurse}, (g) => g.has('MEDICATION_RECEIPT:CREATE')),
@@ -74,10 +83,7 @@ final Map<StaffFeature, (Set<String>, bool Function(_Grants)?)> _features = {
     {_nurse},
     (g) => g.has('MEDICATION_ADMINISTRATION:VIEW') || g.has('MEDICATION_ADMINISTRATION:PROFESSIONAL'),
   ),
-  StaffFeature.incidents: (
-    _appRoles,
-    (g) => g.has('INCIDENT_EMERGENCY:VIEW') || g.has('INCIDENT_EMERGENCY:UPDATE'),
-  ),
+  StaffFeature.incidents: (_appRoles, (g) => g.has('INCIDENT_EMERGENCY:VIEW') || g.has('INCIDENT_EMERGENCY:UPDATE')),
   StaffFeature.alerts: (
     {_floorManager, _doctor, _nurse},
     (g) => g.has('ALERT_HANDLING:VIEW') || g.has('ALERT_HANDLING:UPDATE'),
@@ -120,10 +126,14 @@ StaffNavigation buildStaffNavigation({
   ];
   return StaffNavigation(
     primary: primary,
-    showLookupTab: primary != StaffPrimary.residents,
-    showHandover:
-        appRoles.intersection({_floorManager, _nurse, _caregiver}).isNotEmpty && g.has('SHIFT_HANDOVER:VIEW'),
-    work: [for (final f in visible) if (!_toolFeatures.contains(f)) f],
-    tools: [for (final f in visible) if (_toolFeatures.contains(f)) f],
+    showHandover: appRoles.intersection({_floorManager, _nurse, _caregiver}).isNotEmpty && g.has('SHIFT_HANDOVER:VIEW'),
+    work: [
+      for (final f in visible)
+        if (!_toolFeatures.contains(f)) f,
+    ],
+    tools: [
+      for (final f in visible)
+        if (_toolFeatures.contains(f)) f,
+    ],
   );
 }

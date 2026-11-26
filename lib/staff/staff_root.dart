@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../common/api/api_client.dart';
@@ -10,10 +12,12 @@ import '../common/notifications/push_coordinator.dart';
 import '../common/offline/offline_queue.dart';
 import '../common/theme/app_theme.dart';
 import '../common/widgets/header_app_bar.dart';
+import 'account/staff_account_screen.dart';
 import 'activities/session_list_screen.dart';
 import 'activities/trip_list_screen.dart';
 import 'alerts/alerts_screen.dart';
 import 'alerts/emergency_assist_screen.dart';
+import 'approval_requests/approval_inbox_screen.dart';
 import 'beds/beds_screen.dart';
 import 'care_tasks/care_api_gateways.dart';
 import 'care_tasks/care_tasks_home_screen.dart';
@@ -24,9 +28,11 @@ import 'handover/handover_screen.dart';
 import 'incidents/incidents_screen.dart';
 import 'incidents/record_incident_screen.dart';
 import 'medication/family_medication_screen.dart';
+import 'medication/medication_labels.dart';
 import 'medication/medication_round_cache.dart';
 import 'medication/medication_round_gateway.dart';
 import 'medication/medication_round_repository.dart';
+import 'medication/medication_round_screen.dart';
 import 'medication/supplied_intake_screen.dart';
 import 'notifications/staff_inbox_screen.dart';
 import 'nutrition/family_food_screen.dart';
@@ -39,14 +45,11 @@ import 'shift_home/shift_home_screen.dart';
 import 'shift_swaps/shift_swaps_screen.dart';
 import 'shifts/assignments_screen.dart';
 import 'shifts/my_shifts_screen.dart';
+import 'staff_dashboard_style.dart';
 import 'staff_navigation.dart';
 import 'sync_results/sync_results_screen.dart';
 
-/// Gốc phần nhân viên (000 T007; 002 T046, T060; spec docs/superpowers/specs/2026-11-20-role-based-navigation-design.md
-/// mục 5): vai trò của tài khoản chọn tab 2 và các mục "Thêm" ([buildStaffNavigation]), quyền `/me/permissions` chỉ thu
-/// hẹp. Mọi tab có đầu màn xanh đêm (DESIGN.md 15.4) kèm nút Khẩn cấp (Q-375). Tài khoản không có vai trò dùng app nhân
-/// viên (Quản lý viện, Hành chính, Kế toán) chỉ thấy màn báo dùng web. Tab Thông báo có huy hiệu số Khẩn cấp chưa xác
-/// nhận; đang ở tab khác mà có Khẩn cấp thì hiện dải báo, vì khi app đang mở máy không hiện thông báo hệ thống (009 T022).
+/// Ba tab của app nhân viên. Các lối vào nghiệp vụ trên Trang chủ lọc theo vai trò và quyền.
 class StaffRoot extends StatefulWidget {
   const StaffRoot({super.key, required this.session, required this.queue, this.push});
 
@@ -61,10 +64,7 @@ class StaffRoot extends StatefulWidget {
 typedef _Item = (String label, String? subtitle, IconData icon, Widget Function() body);
 
 class _StaffRootState extends State<StaffRoot> {
-  StaffTab _tab = StaffTab.shift;
-
-  /// Mục đang mở trong "Thêm"; `null` là danh sách.
-  int? _more;
+  StaffTab _tab = StaffTab.home;
   int _urgent = 0;
   bool _urgentBand = false;
   int _unsynced = 0;
@@ -81,11 +81,8 @@ class _StaffRootState extends State<StaffRoot> {
 
   SessionController get _session => widget.session;
 
-  StaffNavigation get _nav => buildStaffNavigation(
-    roles: _session.user?.roles ?? const {},
-    grants: _grants,
-    readinessDuty: _readinessDuty,
-  );
+  StaffNavigation get _nav =>
+      buildStaffNavigation(roles: _session.user?.roles ?? const {}, grants: _grants, readinessDuty: _readinessDuty);
 
   @override
   void initState() {
@@ -104,6 +101,8 @@ class _StaffRootState extends State<StaffRoot> {
         for (final grant in (await _session.api.getList('/me/permissions')).whereType<Map<String, dynamic>>())
           '${grant['function']}:${grant['operation']}',
       };
+    } on ApiUnreachable {
+      return;
     } on Object {
       // Chưa xác nhận được quyền thì không mở mục theo quyền.
     }
@@ -112,8 +111,10 @@ class _StaffRootState extends State<StaffRoot> {
       try {
         await _session.api.getList('/bed-readiness/beds');
         readinessDuty = true;
+      } on ApiUnreachable {
+        readinessDuty = _readinessDuty;
       } on Object {
-        // 403 (không có nhiệm vụ) hoặc lỗi mạng: không hiện mục Giường.
+        // Chưa xác nhận được nhiệm vụ thì không hiện mục Giường.
       }
     }
     if (mounted) {
@@ -151,7 +152,7 @@ class _StaffRootState extends State<StaffRoot> {
     final urgent = push.takeUrgent();
     if (_tab == StaffTab.inbox) return;
     if (push.hasOpened) {
-      selectTab(StaffTab.inbox);
+      _selectTab(StaffTab.inbox);
       return;
     }
     if (urgent) setState(() => _urgentBand = true);
@@ -170,12 +171,18 @@ class _StaffRootState extends State<StaffRoot> {
     if (mounted) setState(() => _urgent = count);
   }
 
-  void selectTab(StaffTab tab) => setState(() {
-    _tab = tab;
-    _more = null;
-    if (tab == StaffTab.inbox) _urgentBand = false;
-    if (tab == StaffTab.more) unawaited(_loadUnsynced());
-  });
+  void _selectTab(StaffTab tab) {
+    if (_tab == tab) return;
+    setState(() {
+      _tab = tab;
+      if (tab == StaffTab.inbox) _urgentBand = false;
+    });
+    if (tab == StaffTab.home) unawaited(_loadUnsynced());
+  }
+
+  Future<void> _refreshDashboard() async {
+    await Future.wait([_loadPermissions(), _loadUnsynced(), _refreshUrgent()]);
+  }
 
   int get _accountId => _session.user!.accountId;
 
@@ -186,27 +193,25 @@ class _StaffRootState extends State<StaffRoot> {
     api: _session.api,
     accountId: _accountId,
     queue: widget.queue,
-    medication: _canRunMedicationRound
-        ? MedicationRoundRepository(
-            ApiMedicationRoundGateway(_session.api),
-            _medicationCache ??= MedicationRoundCache.onDevice(),
-            widget.queue,
-          )
-        : null,
+    medication: _canRunMedicationRound ? _medicationRepository() : null,
   );
 
-  Widget _handover({VoidCallback? onDone}) => HandoverScreen(
-    api: _session.api,
-    cache: _session.user == null ? null : HandoverCache(_session.store, _accountId),
-    onDone: onDone,
+  MedicationRoundRepository _medicationRepository() => MedicationRoundRepository(
+    ApiMedicationRoundGateway(_session.api),
+    _medicationCache ??= MedicationRoundCache.onDevice(),
+    widget.queue,
   );
 
-  (String, IconData, Widget Function()) _primary(StaffPrimary primary) => switch (primary) {
-    StaffPrimary.checklist => ('Checklist', LucideIcons.listChecks, _careTasks),
-    StaffPrimary.floorToday => ('Tầng hôm nay', LucideIcons.clipboardCheck, _careTasks),
-    StaffPrimary.residents => ('Người cao tuổi', LucideIcons.users, () => ResidentLookupScreen(api: _session.api)),
-    StaffPrimary.mealSlips => ('Phiếu bữa ăn', LucideIcons.utensils, () => MealSlipScreen(api: _session.api)),
-  };
+  Future<int> _pendingMedicationCount() async {
+    final doses = await ApiMedicationRoundGateway(_session.api).rounds();
+    final pending = {
+      for (final record in await widget.queue.unsynced(_accountId))
+        if (record.recordType == doseResultRecordType) (jsonDecode(record.content) as Map)['doseKey'],
+    };
+    return doses
+        .where((dose) => doseRecordable(dose['status'] as String?) && !pending.contains(dose['doseKey']))
+        .length;
+  }
 
   _Item _feature(StaffFeature feature) {
     final api = _session.api;
@@ -251,12 +256,7 @@ class _StaffRootState extends State<StaffRoot> {
       ),
       StaffFeature.assignments => ('Phân công', null, LucideIcons.users, () => AssignmentsScreen(api: api)),
       StaffFeature.beds => ('Giường', 'Giường chờ sẵn sàng', LucideIcons.bedDouble, () => BedsScreen(api: api)),
-      StaffFeature.carePlanApproval => (
-        'Kế hoạch chăm sóc',
-        null,
-        LucideIcons.clipboardCheck,
-        _careTasks,
-      ),
+      StaffFeature.carePlanApproval => ('Kế hoạch chăm sóc', null, LucideIcons.clipboardCheck, _careTasks),
       StaffFeature.familyFood => ('Đồ ăn gia đình', null, LucideIcons.apple, () => FamilyFoodScreen(api: api)),
       StaffFeature.residentLoginQr => (
         'Mã đăng nhập',
@@ -273,7 +273,7 @@ class _StaffRootState extends State<StaffRoot> {
       StaffFeature.pendingReview => (
         'Chờ xem lại',
         'Bản ghi cần xem lại',
-        LucideIcons.cloudOff,
+        LucideIcons.listChecks,
         () => PendingReviewScreen(api: api),
       ),
       StaffFeature.earlyUnlock => (
@@ -285,88 +285,147 @@ class _StaffRootState extends State<StaffRoot> {
     };
   }
 
-  /// Hai nhóm của "Thêm" (Figma `5:603`): việc trong ca rồi công cụ.
-  (List<_Item>, List<_Item>) _moreGroups(StaffNavigation nav) => (
-    [
-      if (nav.showHandover)
-        (
-          'Bàn giao ca',
-          null,
-          LucideIcons.arrowLeftRight,
-          // Mở từ "Thêm" thì "Về Ca của tôi" đóng mục Thêm và về tab Ca của tôi.
-          () => _handover(
-            onDone: () => setState(() {
-              _more = null;
-              _tab = StaffTab.shift;
-            }),
-          ),
-        ),
-      for (final f in nav.work) _feature(f),
-    ],
-    [for (final f in nav.tools) _feature(f)],
-  );
-
-  List<(StaffTab, String, IconData, Widget Function())> _tabs(StaffNavigation nav) {
-    final (label, icon, body) = _primary(nav.primary!);
-    final (work, tools) = _moreGroups(nav);
-    final items = [...work, ...tools];
-    return [
-      (
-        StaffTab.shift,
-        'Ca của tôi',
-        LucideIcons.calendarDays,
-        () => ShiftHomeScreen(
-          api: _session.api,
-          showChecklist: nav.primary == StaffPrimary.checklist || nav.primary == StaffPrimary.floorToday,
-          showHandover: nav.showHandover,
-          showSchedule: _grants.contains('SHIFT_SCHEDULE:VIEW'),
-          showDayCare: _grants.contains('DAY_CARE_ATTENDANCE:VIEW'),
-          onSelectTab: selectTab,
-          open: (name) => switch (name) {
-            'incident' => RecordIncidentScreen(api: _session.api),
-            'handover' => _handover(),
-            'dayCare' => DayCareAttendanceScreen(
-              gateway: ApiDayCareAttendanceGateway(_session.api),
-              // Ngày Việt Nam hôm nay, như lối vào cũ ở tab Checklist.
-              date: DateTime.now().toUtc().add(const Duration(hours: 7)).toIso8601String().substring(0, 10),
-            ),
-            _ => _ScheduleAndRequests(
-              api: _session.api,
-              showRequests: _grants.contains('SHIFT_SWAP_REQUEST:VIEW'),
-            ),
-          },
-        ),
+  Future<void> _open(String title, Widget Function() body, {bool standalone = false}) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => standalone
+            ? body()
+            : Scaffold(
+                appBar: headerAppBar(context, title: title),
+                body: body(),
+              ),
       ),
-      (StaffTab.primary, label, icon, body),
-      if (nav.showLookupTab)
-        (StaffTab.lookup, 'Tra cứu', LucideIcons.users, () => ResidentLookupScreen(api: _session.api)),
-      (
-        StaffTab.inbox,
-        'Thông báo',
-        LucideIcons.bell,
-        () => StaffInboxScreen(api: _session.api, push: widget.push, onUrgentCount: _setUrgent),
-      ),
-      (
-        StaffTab.more,
-        'Thêm',
-        LucideIcons.ellipsis,
-        () => _MoreList(
-          groups: [work, tools],
-          onOpen: (item) => setState(() => _more = items.indexOf(item)),
-          onSignOut: () => _session.signOut(),
-        ),
-      ),
-    ];
+    );
+    if (mounted) await _loadUnsynced();
   }
 
-  void _openEmergency() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => Scaffold(
-          appBar: headerAppBar(context, title: 'Hỗ trợ khẩn cấp'),
-          body: EmergencyAssistScreen(api: _session.api),
+  StaffShortcut _shortcut(
+    String title,
+    Widget icon,
+    StaffShortcutTone tone,
+    Widget Function() body, {
+    String? subtitle,
+    String? pageTitle,
+    StaffShortcutSummary? summary,
+    bool standalone = false,
+  }) => StaffShortcut(
+    title,
+    icon,
+    tone,
+    () => _open(pageTitle ?? title, body, standalone: standalone),
+    subtitle: subtitle,
+    summary: summary,
+  );
+
+  StaffShortcut _featureShortcut(StaffFeature feature) {
+    final (label, subtitle, icon, body) = _feature(feature);
+    final (asset, tone) = switch (feature) {
+      StaffFeature.syncResults => ('sync', StaffShortcutTone.indigo),
+      StaffFeature.pendingReview => ('checklist', StaffShortcutTone.paleBlue),
+      StaffFeature.earlyUnlock => ('unlock', StaffShortcutTone.paleGold),
+      StaffFeature.residentLoginQr => ('qr', StaffShortcutTone.paleViolet),
+      _ => (null, StaffShortcutTone.sky),
+    };
+    return _shortcut(
+      label,
+      asset == null ? Icon(icon) : StaffDashboardIcon(asset, color: Theme.of(context).colorScheme.secondary),
+      tone,
+      body,
+      subtitle: subtitle,
+      standalone: const {
+        StaffFeature.familyMedication,
+        StaffFeature.sharedMenu,
+        StaffFeature.activitySessions,
+        StaffFeature.trips,
+        StaffFeature.beds,
+      }.contains(feature),
+    );
+  }
+
+  Widget _home(StaffNavigation nav) {
+    final api = _session.api;
+    final primary = nav.primary!;
+    final secondary = Theme.of(context).colorScheme.secondary;
+    StaffDashboardIcon icon(String name) => StaffDashboardIcon(name, color: secondary);
+    final checklist = primary == StaffPrimary.checklist || primary == StaffPrimary.floorToday;
+    return ShiftHomeScreen(
+      api: api,
+      urgentCount: _urgent,
+      onOpenInbox: () => _selectTab(StaffTab.inbox),
+      refreshDashboard: _refreshDashboard,
+      showTaskSummary: checklist && _grants.contains('TASK_CHECKLIST:VIEW'),
+      loadMedicationCount: _canRunMedicationRound ? _pendingMedicationCount : null,
+      work: [
+        if (checklist)
+          _shortcut(
+            'Checklist ca',
+            icon('checklist'),
+            StaffShortcutTone.blue,
+            _careTasks,
+            pageTitle: primary == StaffPrimary.floorToday ? 'Tầng hôm nay' : null,
+            summary: StaffShortcutSummary.overdueTasks,
+          ),
+        if (primary == StaffPrimary.mealSlips)
+          _shortcut(
+            'Phiếu bữa ăn',
+            const Icon(LucideIcons.utensils),
+            StaffShortcutTone.blue,
+            () => MealSlipScreen(api: api),
+          ),
+        if (_grants.contains('SHIFT_SCHEDULE:VIEW'))
+          _shortcut(
+            'Lịch ca và đơn',
+            icon('calendar'),
+            StaffShortcutTone.violet,
+            () => _ScheduleAndRequests(api: api, showRequests: _grants.contains('SHIFT_SWAP_REQUEST:VIEW')),
+          ),
+        if (_canRunMedicationRound)
+          _shortcut(
+            'Phát thuốc',
+            icon('pill'),
+            StaffShortcutTone.green,
+            () => MedicationRoundScreen(repository: _medicationRepository(), accountId: _accountId),
+            standalone: true,
+            summary: StaffShortcutSummary.pendingDoses,
+          ),
+        if (nav.showHandover)
+          _shortcut(
+            'Bàn giao ca',
+            icon('handover'),
+            StaffShortcutTone.gold,
+            () => HandoverScreen(api: api, cache: HandoverCache(_session.store, _accountId)),
+          ),
+      ],
+      tools: [
+        _shortcut(
+          'Tra cứu',
+          icon('people'),
+          StaffShortcutTone.sky,
+          () => ResidentLookupScreen(api: api),
+          subtitle: 'Người cao tuổi',
+          pageTitle: primary == StaffPrimary.residents ? 'Người cao tuổi' : null,
         ),
-      ),
+        for (final feature in nav.tools) _featureShortcut(feature),
+        _shortcut('Phê duyệt', icon('approval'), StaffShortcutTone.paleGreen, () => ApprovalInboxScreen(api: api)),
+        if (nav.work.contains(StaffFeature.residentLoginQr)) _featureShortcut(StaffFeature.residentLoginQr),
+      ],
+      other: [
+        _shortcut('Báo sự cố', icon('sos'), StaffShortcutTone.paleGold, () => RecordIncidentScreen(api: api)),
+        if (_grants.contains('DAY_CARE_ATTENDANCE:VIEW'))
+          _shortcut(
+            'Điểm danh bán trú',
+            const Icon(LucideIcons.userCheck),
+            StaffShortcutTone.paleGreen,
+            () => DayCareAttendanceScreen(
+              gateway: ApiDayCareAttendanceGateway(api),
+              date: DateTime.now().toUtc().add(const Duration(hours: 7)).toIso8601String().substring(0, 10),
+            ),
+          ),
+        for (final feature in nav.work)
+          if (feature != StaffFeature.residentLoginQr &&
+              (feature != StaffFeature.mealSlipFloor || primary != StaffPrimary.mealSlips))
+            _featureShortcut(feature),
+      ],
     );
   }
 
@@ -374,47 +433,89 @@ class _StaffRootState extends State<StaffRoot> {
   Widget build(BuildContext context) {
     final nav = _nav;
     if (nav.primary == null) return _WebOnly(onSignOut: () => _session.signOut());
-    final tabs = _tabs(nav);
-    final index = tabs.indexWhere((t) => t.$1 == _tab).clamp(0, tabs.length - 1);
-    final (work, tools) = _moreGroups(nav);
-    final items = [...work, ...tools];
-    final more = _more != null && _more! < items.length ? items[_more!] : null;
-    final title = more?.$1 ?? tabs[index].$2;
-    final body = more?.$4 ?? tabs[index].$4;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tones = theme.extension<Tones>()!;
+    final fullName = _session.user?.fullName?.trim() ?? '';
+    final name = fullName.isNotEmpty ? fullName : _session.username ?? 'Nhân viên';
+    final role = staffRoleLabel(_session.user?.roles ?? const {});
+    final extraTextHeight = (MediaQuery.textScalerOf(context).scale(16) - 16).clamp(0.0, double.infinity).toDouble();
     return Scaffold(
-      appBar: headerAppBar(
-        context,
-        title: title,
-        leading: more == null
-            ? null
-            : IconButton(
-                tooltip: 'Quay lại',
-                icon: const Icon(LucideIcons.arrowLeft),
-                onPressed: () => setState(() => _more = null),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        titleSpacing: 16,
+        toolbarHeight: 70 + extraTextHeight * 2,
+        backgroundColor: tones.header,
+        foregroundColor: tones.headerInkStrong,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        title: Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: _tab == StaffTab.home
+              ? StaffIdentity(name: name, role: role, inHeader: true)
+              : FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _tab.label,
+                    style: theme.textTheme.headlineMedium?.copyWith(fontSize: 28, color: tones.headerInkStrong),
+                  ),
+                ),
+        ),
+        actions: [
+          _EmergencyButton(onPressed: () => _open('Hỗ trợ khẩn cấp', () => EmergencyAssistScreen(api: _session.api))),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
+          children: [
+            if (_urgentBand && (_tab != StaffTab.home || _urgent == 0))
+              _UrgentBand(onOpen: () => _selectTab(StaffTab.inbox)),
+            Expanded(
+              child: KeyedSubtree(
+                key: ValueKey(_tab),
+                child: switch (_tab) {
+                  StaffTab.home => _home(nav),
+                  StaffTab.inbox => StaffInboxScreen(api: _session.api, push: widget.push, onUrgentCount: _setUrgent),
+                  StaffTab.account => StaffAccountScreen(session: _session, name: name, role: role),
+                },
               ),
-        actions: [_EmergencyButton(onPressed: _openEmergency)],
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_urgentBand) _UrgentBand(onOpen: () => selectTab(StaffTab.inbox)),
-          Expanded(
-            child: KeyedSubtree(key: ValueKey((tabs[index].$1, _more)), child: body()),
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => selectTab(tabs[i].$1),
-        destinations: [
-          for (final (tab, label, icon, _) in tabs)
-            NavigationDestination(
-              icon: tab == StaffTab.inbox
-                  ? Badge.count(count: _urgent, isLabelVisible: _urgent > 0, child: Icon(icon))
-                  : Icon(icon),
-              label: label,
             ),
-        ],
+          ],
+        ),
+      ),
+      bottomNavigationBar: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
+        child: NavigationBarTheme(
+          data: theme.navigationBarTheme.copyWith(
+            labelTextStyle: WidgetStatePropertyAll(theme.textTheme.labelMedium?.copyWith(color: tones.headerInkStrong)),
+            backgroundColor: tones.header,
+            indicatorColor: scheme.brightness == Brightness.light ? scheme.primary : scheme.secondaryContainer,
+          ),
+          child: NavigationBar(
+            height: 68,
+            selectedIndex: _tab.index,
+            onDestinationSelected: (index) => _selectTab(StaffTab.values[index]),
+            destinations: [
+              for (final tab in StaffTab.values)
+                NavigationDestination(
+                  icon: tab == StaffTab.inbox
+                      ? Badge.count(
+                          count: _urgent,
+                          isLabelVisible: _urgent > 0,
+                          backgroundColor: scheme.error,
+                          textColor: scheme.onError,
+                          child: StaffDashboardIcon(tab.icon, color: tones.headerInk),
+                        )
+                      : StaffDashboardIcon(tab.icon, color: tones.headerInk),
+                  label: tab.label,
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -430,16 +531,29 @@ class _EmergencyButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: TextButton.icon(
-        style: TextButton.styleFrom(
-          backgroundColor: scheme.error,
-          foregroundColor: scheme.onError,
-          minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.only(right: 16, bottom: 6),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 160),
+        child: TextButton(
+          style: TextButton.styleFrom(
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
+            minimumSize: const Size(112, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            textStyle: Theme.of(context).textTheme.labelMedium?.copyWith(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          onPressed: onPressed,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              StaffDashboardIcon('sos', color: scheme.onError),
+              const SizedBox(width: 7),
+              const Flexible(
+                child: FittedBox(fit: BoxFit.scaleDown, child: Text('Khẩn cấp')),
+              ),
+            ],
+          ),
         ),
-        onPressed: onPressed,
-        icon: const Icon(LucideIcons.siren),
-        label: const Text('Khẩn cấp'),
       ),
     );
   }
@@ -466,7 +580,12 @@ class _ScheduleAndRequests extends StatelessWidget {
             ],
           ),
           Expanded(
-            child: TabBarView(children: [MyShiftsScreen(api: api), ShiftSwapsScreen(api: api)]),
+            child: TabBarView(
+              children: [
+                MyShiftsScreen(api: api),
+                ShiftSwapsScreen(api: api),
+              ],
+            ),
           ),
         ],
       ),
@@ -492,7 +611,10 @@ class _WebOnly extends StatelessWidget {
           children: [
             Text('Vai trò của bạn dùng trên web quản trị', style: text.titleLarge),
             const SizedBox(height: 8),
-            Text('Ứng dụng di động dành cho nhân viên làm việc tại tầng, người thân và người cao tuổi.', style: text.bodyMedium),
+            Text(
+              'Ứng dụng di động dành cho nhân viên làm việc tại tầng, người thân và người cao tuổi.',
+              style: text.bodyMedium,
+            ),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: onSignOut,
@@ -541,54 +663,6 @@ class _UrgentBand extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// "Thêm" (Figma `5:603`): các nhóm dòng trắng trong khối bo góc; dòng cuối Đăng xuất (máy dùng chung tại tầng).
-class _MoreList extends StatelessWidget {
-  const _MoreList({required this.groups, required this.onOpen, required this.onSignOut});
-
-  final List<List<_Item>> groups;
-  final ValueChanged<_Item> onOpen;
-  final VoidCallback onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    Widget group(List<Widget> rows) => Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        child: Column(children: ListTile.divideTiles(context: context, tiles: rows).toList()),
-      ),
-    );
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        for (final items in groups)
-          if (items.isNotEmpty)
-            group([
-              for (final item in items)
-                ListTile(
-                  minTileHeight: 64,
-                  leading: Icon(item.$3),
-                  title: Text(item.$1),
-                  subtitle: item.$2 == null ? null : Text(item.$2!),
-                  trailing: const Icon(LucideIcons.chevronRight),
-                  onTap: () => onOpen(item),
-                ),
-            ]),
-        group([
-          ListTile(
-            minTileHeight: 56,
-            leading: Icon(LucideIcons.logOut, color: theme.colorScheme.error),
-            title: Text('Đăng xuất', style: TextStyle(color: theme.colorScheme.error)),
-            onTap: onSignOut,
-          ),
-        ]),
-      ],
     );
   }
 }

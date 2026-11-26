@@ -16,8 +16,7 @@ Future<void> pumpStaff(WidgetTester tester, FakeBackend backend) async {
 }
 
 void main() {
-  // Spec 2026-11-20 điều hướng theo vai trò: Ca của tôi là tab đầu, mở mặc định (Figma 03 · App nhân viên).
-  testWidgets('FR_054_caCuaToi_tabDau_moMacDinh', (tester) async {
+  testWidgets('FR_054_trangChu_tabDau_moMacDinh', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
         {'function': 'SHIFT_SCHEDULE', 'operation': 'VIEW'},
@@ -28,12 +27,11 @@ void main() {
     await pumpStaff(tester, backend);
     final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(bar.selectedIndex, 0);
-    expect((bar.destinations.first as NavigationDestination).label, 'Ca của tôi');
+    expect((bar.destinations.first as NavigationDestination).label, 'Trang chủ');
     expect(backend.calls('GET', '/me/permissions').single.headers['Authorization'], 'Bearer test-session');
     expect(tester.takeException(), isNull);
   });
 
-  // Lịch ca mở từ dòng "Lịch ca và đơn" của Ca của tôi; cùng màn có tab Đổi ca, nghỉ khi có quyền (015 US3, US4).
   testWidgets('FR_054_lichCaVaDon_moLichCa_coDoiCaNghi', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
@@ -62,11 +60,12 @@ void main() {
       final backend = FakeBackend()..on('GET', '/me/permissions', 200, grants);
       await pumpStaff(tester, backend);
       expect(find.text('Lịch ca và đơn'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Báo sự cố'), 160);
       expect(find.text('Báo sự cố'), findsOneWidget);
     });
   }
 
-  testWidgets('FR_054_moreMenuWorksAt200PercentTextOnNarrowPhone', (tester) async {
+  testWidgets('FR_054_homeGridWorksAt200PercentTextOnNarrowPhone', (tester) async {
     tester.view.physicalSize = const Size(320, 1000);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;

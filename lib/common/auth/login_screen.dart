@@ -8,21 +8,26 @@ import 'forgot_password_screen.dart';
 
 export 'auth_layout.dart' show appVersion;
 
-/// Màn đầu khi chưa đăng nhập (000 T006; 002 T046, T047; sửa 2026-10-28, chủ dự án duyệt; tỷ lệ theo Figma "Đăng nhập · Mobile"
-/// 88:254 trên khung chung [AuthLayout]): logo, một form tên đăng nhập, mật khẩu cho nhân viên và người thân (kênh `MOBILE_APP`, backend gán kênh
-/// phiên theo loại tài khoản nên thời gian tự đăng xuất theo kênh giữ nguyên, FR-013a),; nút phụ mở màn quét mã của người cao tuổi (FR-069). Máy đã gắn với tài khoản người cao tuổi không qua màn
-/// này. Màn quét mã do `ElderCareApp` truyền vào để `common/` không phụ thuộc `resident/` (mobile/README.md luật 1). Lỗi
-/// theo câu backend trả (không lộ tài khoản có hay không, FR-014). Có `api` và kênh tin nhắn đã cấu hình thì có
-/// "Quên mật khẩu?" (002 T105, FR-052a, Q-06). Ô đầu là tên đăng nhập vì backend đăng nhập bằng tên đăng nhập (anh chốt
-/// 2026-11-21, mẫu ghi "Số điện thoại").
+/// Biểu mẫu chung trên [AuthLayout] cho nhân viên, người thân và người cao tuổi. App truyền màn quét QR và nút SOS
+/// cho máy đã gắn người cao tuổi. Có [api] và kênh tin nhắn đã cấu hình thì hiện "Quên mật khẩu?" (002 FR-052a).
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.onSubmit, required this.residentLogin, this.notice, this.api});
+  const LoginScreen({
+    super.key,
+    required this.onSubmit,
+    required this.residentLogin,
+    this.notice,
+    this.api,
+    this.errorMessage = backendMessage,
+    this.bottomNavigationBar,
+  });
 
   static const usernameKey = ValueKey('login.username');
   static const passwordKey = ValueKey('login.password');
 
   final Future<void> Function(String username, String password) onSubmit;
   final WidgetBuilder residentLogin;
+  final String Function(Object error) errorMessage;
+  final Widget? bottomNavigationBar;
 
   /// Câu báo, ví dụ sau khi phiên bị kết thúc.
   final String? notice;
@@ -85,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Đăng nhập xong `ElderCareApp` dựng lại màn theo trạng thái phiên
       await widget.onSubmit(_username.text.trim(), _password.text);
     } on Exception catch (e) {
-      if (mounted) setState(() => _error = backendMessage(e));
+      if (mounted) setState(() => _error = widget.errorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -94,6 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthLayout(
+      bottomNavigationBar: widget.bottomNavigationBar,
       children: [
         if (widget.notice != null) ...[AuthMessage(widget.notice!), const SizedBox(height: 16)],
         if (_resetDone) ...[
