@@ -10,7 +10,7 @@ import 'package:mobile/resident/sos/sos_button.dart';
 import '../../support/fake_backend.dart';
 
 // 012 T071, T074 (tên logic nut_sos_test; FR-085, quickstart K9 → K11; 007 FR-047d, FR-047f, FR-047h, FR-047j; DESIGN.md
-// 15.6): chạm "Gọi người giúp" thì đếm ngược 3 giây có nút Hủy; Hủy không gửi; chạm lần nữa gửi ngay; hết giờ thì gửi
+// 15.6): chạm "Gọi người giúp" thì đếm ngược 5 giây có một nút Hủy; Hủy không gửi; hết giờ thì gửi
 // bằng token thiết bị. Sau khi gửi: "Đã gửi…", "[họ tên] đang đến.", "[họ tên] đã tới." (hỏi lại mỗi 5 giây), sáu nút nơi
 // đang ở, gửi vị trí khi backend yêu cầu và đã cho quyền. Không gửi được thì hiện số của viện đã lưu và 115, không xếp
 // hàng gửi sau.
@@ -85,6 +85,8 @@ void main() {
     await pumpButton(tester);
     await press(tester);
     expect(find.textContaining('Đang gọi người giúp sau'), findsOneWidget);
+    expect(find.text('Gọi ngay'), findsNothing, reason: 'chỉ còn một nút Hủy để tránh bấm nhầm gửi');
+    expect(find.text('Chạm Hủy nếu bấm nhầm'), findsOneWidget);
 
     await tester.tap(find.text('Hủy'));
     await tester.pump();
@@ -98,7 +100,7 @@ void main() {
   testWidgets('FR_085_secondTapSendsNow_statusUpdates', (tester) async {
     await pumpButton(tester);
     await press(tester);
-    await tester.tap(find.text('Gọi ngay'));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -128,7 +130,7 @@ void main() {
     await pumpButton(tester);
     await press(tester);
     expect(backend.calls('POST', '/sos'), isEmpty);
-    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump(const Duration(milliseconds: 400));
     expect(backend.calls('POST', '/sos'), hasLength(1));
 
@@ -139,6 +141,7 @@ void main() {
     await tester.pump();
     expect(jsonDecode(backend.calls('POST', '/sos/7/place').single.body), {'place': 'CORRIDOR'});
     expect(find.text('Ở phòng'), findsNothing);
+    expect(find.text('Đã ghi: Hành lang'), findsOneWidget);
     await backHome(tester);
     await tester.pumpAndSettle();
   });
@@ -148,7 +151,7 @@ void main() {
     backend.down = true;
     await pumpButton(tester);
     await press(tester);
-    await tester.tap(find.text('Gọi ngay'));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -170,7 +173,7 @@ void main() {
     });
     await pumpButton(tester);
     await press(tester);
-    await tester.tap(find.text('Gọi ngay'));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -182,7 +185,7 @@ void main() {
   testWidgets('FR_085_unboundDeviceDoesNotCall', (tester) async {
     await pumpButton(tester, deviceToken: null);
     await press(tester);
-    await tester.tap(find.text('Gọi ngay'));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -198,7 +201,7 @@ void main() {
       ..on('POST', '/sos/7/location', 204);
     await pumpButton(tester);
     await press(tester);
-    await tester.tap(find.text('Gọi ngay'));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(backend.calls('POST', '/sos/7/location'), hasLength(1));
@@ -231,7 +234,7 @@ void main() {
     await pumpButton(tester);
     for (var i = 0; i < 2; i++) {
       await press(tester);
-      await tester.tap(find.text('Gọi ngay'));
+      await tester.pump(const Duration(seconds: 5));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Đã gửi. Nhân viên đang được báo.'), findsOneWidget);

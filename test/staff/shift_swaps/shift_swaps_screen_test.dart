@@ -205,4 +205,27 @@ void main() {
     expect(find.textContaining('Không kết nối được máy chủ'), findsOneWidget);
     expect(find.text('Bận'), findsOneWidget);
   });
+
+  // Demo 2026-11-25: đọc được danh sách nhân viên thì chọn người nhận theo tên thay cho ô nhập mã
+  testWidgets('FR_019_chonNguoiNhanTheoTen', (tester) async {
+    backend.on('GET', '/staff', 200, [
+      {'id': 2, 'fullName': 'Trần Văn Nhận', 'position': 'Nhân viên chăm sóc'},
+    ]);
+    await open(tester, backend);
+    await tester.tap(find.byKey(const ValueKey('create-request')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap-shift-x')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('20/11/2026').last);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Mã nhân viên người nhận'), findsNothing);
+    await tester.tap(find.text('Người nhận'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Trần Văn Nhận (Nhân viên chăm sóc)').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('swap-reason')), 'Việc gia đình');
+    await tester.tap(find.widgetWithText(FilledButton, 'Gửi yêu cầu'));
+    await tester.pumpAndSettle();
+    expect((jsonDecode(backend.calls('POST', '/shift-swaps').single.body) as Map)['recipientId'], 2);
+  });
 }

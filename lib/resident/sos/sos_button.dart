@@ -91,6 +91,9 @@ String _uuid() {
 
 Future<void> _call(String number) => launchUrl(Uri(scheme: 'tel', path: number));
 
+/// Số giây đếm ngược trước khi gửi; người cao tuổi tay run cần thời gian hủy (Android Emergency SOS cũng dùng 5 giây).
+const _countdownSeconds = 5;
+
 /// Nút ở đáy màn đầu: rộng hết màn, cao 72, nền đỏ chữ trắng (DESIGN.md 15.6, chỗ duy nhất đỏ là màu nền).
 class SosButton extends StatelessWidget {
   const SosButton({super.key, required this.api, required this.store, this.location});
@@ -106,7 +109,7 @@ class SosButton extends StatelessWidget {
       minimum: const EdgeInsets.all(16),
       child: Semantics(
         button: true,
-        label: 'Gọi người giúp. Chạm để gửi, có ba giây để hủy.',
+        label: 'Gọi người giúp. Chạm để gửi, có năm giây để hủy.',
         excludeSemantics: true,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 72),
@@ -144,7 +147,7 @@ class _CountdownScreen extends StatefulWidget {
 }
 
 class _CountdownScreenState extends State<_CountdownScreen> {
-  int _left = 3;
+  int _left = _countdownSeconds;
   bool _cancelled = false;
   bool _sending = false;
   Timer? _timer;
@@ -154,7 +157,7 @@ class _CountdownScreenState extends State<_CountdownScreen> {
     super.initState();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_left <= 1) {
-        HapticFeedback.vibrate();
+        HapticFeedback.lightImpact();
         _send();
       } else {
         setState(() => _left--);
@@ -230,7 +233,6 @@ class _CountdownScreenState extends State<_CountdownScreen> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final colors = Theme.of(context).colorScheme;
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -256,22 +258,21 @@ class _CountdownScreenState extends State<_CountdownScreen> {
                 const SizedBox(height: 16),
                 Text('$_left', style: text.displayLarge, textAlign: TextAlign.center),
               ],
-              const Spacer(),
               if (!_cancelled) ...[
+                const SizedBox(height: 8),
+                Text('Chạm Hủy nếu bấm nhầm', style: text.titleMedium, textAlign: TextAlign.center),
+              ],
+              const Spacer(),
+              // Một nút duy nhất và to: bấm nhầm thì chỉ có việc hủy; không nhấn nút nào thì hết giờ tự gửi.
+              if (!_cancelled)
                 SizedBox(
-                  height: 72,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: colors.error, foregroundColor: colors.onError),
-                    onPressed: _sending ? null : _send,
-                    child: const Text('Gọi ngay'),
+                  height: 96,
+                  child: FilledButton.icon(
+                    onPressed: _sending ? null : _cancel,
+                    icon: const Icon(LucideIcons.x, size: 32),
+                    label: const Text('Hủy'),
                   ),
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 72,
-                  child: OutlinedButton(onPressed: _sending ? null : _cancel, child: const Text('Hủy')),
-                ),
-              ],
             ],
           ),
         ),
@@ -280,13 +281,14 @@ class _CountdownScreenState extends State<_CountdownScreen> {
   }
 }
 
+// Mỗi nơi có biểu tượng Lucide (bộ chung của dự án) kèm chữ; biểu tượng không đứng một mình (WCAG 1.4.1).
 const _places = [
-  ('ROOM', 'Ở phòng'),
-  ('RESTROOM', 'Nhà vệ sinh'),
-  ('CORRIDOR', 'Hành lang'),
-  ('COMMON_ROOM', 'Phòng sinh hoạt chung'),
-  ('YARD', 'Ngoài sân'),
-  ('OTHER', 'Chỗ khác'),
+  ('ROOM', 'Ở phòng', LucideIcons.bed),
+  ('RESTROOM', 'Nhà vệ sinh', LucideIcons.toilet),
+  ('CORRIDOR', 'Hành lang', LucideIcons.doorOpen),
+  ('COMMON_ROOM', 'Phòng sinh hoạt chung', LucideIcons.sofa),
+  ('YARD', 'Ngoài sân', LucideIcons.trees),
+  ('OTHER', 'Chỗ khác', LucideIcons.mapPin),
 ];
 
 /// Sau khi gửi: tự cập nhật mỗi 5 giây; nơi đang ở chọn một lần; gửi vị trí khi backend yêu cầu. Không có nút hủy.
@@ -307,7 +309,7 @@ class _StatusScreenState extends State<_StatusScreen> {
   late final int _pressId = widget.first['pressId'] as int;
   Timer? _poll;
   Timer? _locationTimer;
-  bool _placeChosen = false;
+  String? _chosenPlace;
   bool _stopLocation = false;
 
   Map<String, String> get _headers => {'X-Device-Token': widget.token};
@@ -363,8 +365,8 @@ class _StatusScreenState extends State<_StatusScreen> {
     }
   }
 
-  Future<void> _choosePlace(String place) async {
-    setState(() => _placeChosen = true);
+  Future<void> _choosePlace(String place, String label) async {
+    setState(() => _chosenPlace = label);
     try {
       await widget.api.requestJson('POST', '/sos/$_pressId/place', body: {'place': place}, headers: _headers);
     } on Exception {
@@ -392,26 +394,55 @@ class _StatusScreenState extends State<_StatusScreen> {
             const SizedBox(height: 32),
             Semantics(
               liveRegion: true,
-              child: Text(_message, style: text.headlineMedium, textAlign: TextAlign.center),
+              child: Column(
+                children: [
+                  Icon(LucideIcons.circleCheck, size: 48, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(height: 12),
+                  Text(_message, style: text.headlineMedium, textAlign: TextAlign.center),
+                ],
+              ),
             ),
             const SizedBox(height: 32),
-            if (!_placeChosen) ...[
-              Text('Đang ở đâu?', style: text.titleLarge),
+            if (_chosenPlace == null) ...[
+              Text('Bạn đang ở đâu?', style: text.titleLarge),
               const SizedBox(height: 12),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 2.2,
-                children: [
-                  for (final p in _places)
-                    OutlinedButton(
-                      onPressed: () => _choosePlace(p.$1),
-                      child: Text(p.$2, textAlign: TextAlign.center),
-                    ),
-                ],
+              // Hai cột, hình trên chữ dưới; chiều cao theo nội dung (IntrinsicHeight) để chữ phóng 200% không bị tràn, và
+              // đủ trong một màn để người cao tuổi không phải vuốt (DESIGN.md 15.6).
+              for (var i = 0; i < _places.length; i += 2) ...[
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final p in _places.skip(i).take(2)) ...[
+                        if (p != _places[i]) const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(56, 96),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                            ),
+                            onPressed: () => _choosePlace(p.$1, p.$2),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(p.$3, size: 32),
+                                const SizedBox(height: 8),
+                                Text(p.$2, textAlign: TextAlign.center),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 12),
+            ] else ...[
+              Semantics(
+                liveRegion: true,
+                child: Text('Đã ghi: $_chosenPlace', style: text.titleLarge, textAlign: TextAlign.center),
               ),
               const SizedBox(height: 24),
             ],
