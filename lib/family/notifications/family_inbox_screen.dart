@@ -6,6 +6,7 @@ import '../../common/notifications/push_coordinator.dart';
 import '../admissions/change_confirmation_screen.dart';
 import '../admissions/change_request_history_screen.dart';
 import '../admissions/contract_screen.dart';
+import '../admissions/ending_request_screen.dart';
 import '../belongings/recipient_confirmation_screen.dart';
 import '../charges/costs_from_notice_screen.dart';
 
@@ -29,7 +30,13 @@ class FamilyInboxScreen extends StatelessWidget {
     final source = n['sourceRecord'] as Map<String, dynamic>?;
     if (source == null) return null;
     const contractNotices = {'M02.CONTRACT_EXPIRING', 'M02.SHORT_TERM_CONTRACT', 'M02.CONTRACT_OVERDUE'};
-    const alwaysOpen = {'M02.CHANGE_CONFIRMATION', 'M02.RESIDENCY_CHANGE', 'M11.COST_STATEMENT', ...contractNotices};
+    const alwaysOpen = {
+      'M02.CHANGE_CONFIRMATION',
+      'M02.RESIDENCY_CHANGE',
+      'M02.ENDING_REQUEST',
+      'M11.COST_STATEMENT',
+      ...contractNotices,
+    };
     if (source['canOpen'] == false && !alwaysOpen.contains(source['type'])) return null;
     final id = int.tryParse(source['id'] as String? ?? '');
     if (id == null) return null;
@@ -48,6 +55,9 @@ class FamilyInboxScreen extends StatelessWidget {
       case 'M02.CONTRACT_EXPIRING' || 'M02.SHORT_TERM_CONTRACT' || 'M02.CONTRACT_OVERDUE':
         screen = ContractScreen(api: api);
         label = 'Xem hợp đồng';
+      case 'M02.ENDING_REQUEST':
+        screen = EndingRequestFromNotice(api: api, requestId: id);
+        label = 'Xem yêu cầu kết thúc lưu trú';
       case 'M11.COST_STATEMENT':
         screen = CostsFromNoticeScreen(api: api, statementId: id);
         label = 'Xem chi phí';

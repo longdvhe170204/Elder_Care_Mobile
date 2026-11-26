@@ -8,6 +8,7 @@ import '../../common/format/date_time.dart';
 import '../../common/widgets/status_pill.dart';
 import '../admissions/change_request_screen.dart';
 import '../admissions/contract_screen.dart';
+import '../admissions/ending_request_screen.dart';
 import '../balance/family_balance_screen.dart';
 import '../belongings/family_belongings_screen.dart';
 import '../charges/family_costs_screen.dart';
@@ -333,6 +334,12 @@ class FamilyMoreTab extends StatelessWidget {
               () => _push(context, 'Yêu cầu thay đổi dịch vụ', ChangeRequestScreen(api: api, residentId: resident.id)),
             ),
             _row(LucideIcons.fileText, 'Hợp đồng', () => _push(context, 'Hợp đồng', ContractScreen(api: api))),
+            _row(
+              LucideIcons.doorOpen,
+              'Kết thúc lưu trú',
+              () => _push(context, 'Kết thúc lưu trú', EndingRequestScreen(api: api, residentId: resident.id)),
+              subtitle: 'Gửi yêu cầu, theo dõi viện xử lý',
+            ),
           ]),
         _Group([
           if (resident.belongings)
