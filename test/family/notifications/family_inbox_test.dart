@@ -17,6 +17,7 @@ Map<String, dynamic> notification({
   String title = 'Bảng chi phí tháng 10 đã chốt',
   String? viewedAt,
   String? acknowledgedAt,
+  String? handledAt,
   List<Map<String, dynamic>> content = const [],
   List<String> hiddenParts = const [],
 }) => {
@@ -31,6 +32,7 @@ Map<String, dynamic> notification({
   'sentAt': '2026-10-27T02:00:00Z',
   'viewedAt': viewedAt,
   'acknowledgedAt': acknowledgedAt,
+  'handledAt': handledAt,
 };
 
 Map<String, dynamic> page(List<Map<String, dynamic>> items, {int unread = 0, int urgent = 0, String? next}) => {
@@ -67,6 +69,13 @@ void main() {
     backend = FakeBackend();
     backend.on('GET', '/residents', 403, {'errorCode': 'PERMISSION_DENIED'});
     backend.on('GET', '/me/notifications', 200, page([notification()], unread: 1));
+  });
+
+  // Góp ý demo BF-10 (2026-11-27, Q-462): việc nguồn đã báo xử lý xong mang nhãn Đã xử lý
+  testWidgets('Q_462_daXuLy_nhan', (tester) async {
+    backend.on('GET', '/me/notifications', 200, page([notification(handledAt: '2026-12-02T02:19:00Z')]));
+    await pumpScreen(tester, backend.client());
+    expect(find.text('Đã xử lý'), findsOneWidget);
   });
 
   testWidgets('FR_033_summaryAndRow_titleLevelStatus', (tester) async {

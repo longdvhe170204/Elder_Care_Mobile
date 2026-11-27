@@ -386,6 +386,7 @@ class _NotificationRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final viewed = notification['viewedAt'] != null;
+    final handled = notification['handledAt'] != null;
     return Material(
       color: theme.colorScheme.surface,
       child: InkWell(
@@ -409,9 +410,14 @@ class _NotificationRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
+                // Q-462: việc nguồn đã báo xử lý xong
                 StatusPill(
-                  label: viewed ? 'Đã xem' : 'Chưa xem',
-                  tone: viewed ? StatusTone.settled : StatusTone.neutral,
+                  label: handled
+                      ? 'Đã xử lý'
+                      : viewed
+                      ? 'Đã xem'
+                      : 'Chưa xem',
+                  tone: handled || viewed ? StatusTone.settled : StatusTone.neutral,
                 ),
               ],
             ),
