@@ -12,6 +12,12 @@ import '../../support/fake_backend.dart';
 // còn chờ xử lý; mỗi người cao tuổi một yêu cầu đang chờ nên đang chờ thì không hiện form.
 
 const _path = '/family-portal/residents/5/residency-ending-requests';
+const _contract = '/family-portal/residents/5/contract';
+const contract = {
+  'contracts': [
+    {'id': 3, 'status': 'ACTIVE', 'endDate': '2026-11-30'},
+  ],
+};
 
 Map<String, dynamic> request({String status = 'PENDING', String? decisionReason}) => {
   'id': 7,
@@ -42,13 +48,15 @@ Future<void> pumpScreen(WidgetTester tester, FakeBackend backend) => pump(
 
 void main() {
   testWidgets('thieuTruong_baoTaiO_vaChuaGui', (tester) async {
-    final backend = FakeBackend()..on('GET', _path, 200, <Object>[]);
+    final backend = FakeBackend()
+      ..on('GET', _path, 200, <Object>[])
+      ..on('GET', _contract, 200, contract);
     await pumpScreen(tester, backend);
 
     await tester.tap(find.text('Gửi yêu cầu'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Chọn trường hợp'), findsOneWidget);
+    expect(find.text('Trường hợp kết thúc'), findsNothing);
     expect(find.text('Nhập ngày kết thúc mong muốn'), findsOneWidget);
     expect(find.text('Nhập lý do'), findsOneWidget);
     expect(backend.calls('POST', _path), isEmpty);
@@ -58,18 +66,18 @@ void main() {
     var sent = false;
     final backend = FakeBackend()
       ..onRequest('GET', _path, (_) => sent ? [request()] : <Object>[])
+      ..on('GET', _contract, 200, contract)
       ..onRequest('POST', _path, (_) {
         sent = true;
         return request();
       });
     await pumpScreen(tester, backend);
 
-    await tester.tap(find.text('Trường hợp kết thúc'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Hết hạn hợp đồng').last);
-    await tester.pumpAndSettle();
+    // hợp đồng hết hạn 30/11: chọn đúng ngày đó là hết hạn hợp đồng
+    expect(find.text('Hợp đồng hết hạn ngày 30/11/2026.'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextField, 'Ngày kết thúc mong muốn (dd/MM/yyyy)'), '30/11/2026');
     await tester.enterText(find.widgetWithText(TextField, 'Lý do'), 'Gia đình đón về');
+    expect(find.textContaining('Kết thúc khi hết hạn hợp đồng'), findsOneWidget);
     await tester.tap(find.text('Gửi yêu cầu'));
     await tester.pumpAndSettle();
     expect(backend.calls('POST', _path), isEmpty);
@@ -153,5 +161,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Viện từ chối'), findsOneWidget);
+  });
+
+  testWidgets('truocHan_laChamDut', (tester) async {
+    final backend = FakeBackend()
+      ..on('GET', _path, 200, <Object>[])
+      ..on('GET', _contract, 200, contract);
+    await pumpScreen(tester, backend);
+    await tester.enterText(find.widgetWithText(TextField, 'Ngày kết thúc mong muốn (dd/MM/yyyy)'), '25/11/2026');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Chấm dứt trước hạn hợp đồng'), findsOneWidget);
   });
 }

@@ -37,7 +37,7 @@ class _EndingRequestScreenState extends State<EndingRequestScreen> {
   final _date = TextEditingController();
   final _reason = TextEditingController();
   List<Map<String, dynamic>>? _requests;
-  String? _case;
+  String? _contractEnd;
   String _key = _uuid();
   bool _submitted = false;
   bool _busy = false;
@@ -67,9 +67,20 @@ class _EndingRequestScreenState extends State<EndingRequestScreen> {
   Future<void> _load() async {
     try {
       final rows = (await widget.api.getList(_path)).cast<Map<String, dynamic>>();
+      // Ngày hết hạn của hợp đồng Hiệu lực để biết hết hạn hay chấm dứt (demo BF-10, 2026-11-27)
+      String? contractEnd;
+      try {
+        final body = await widget.api.get('/family-portal/residents/${widget.residentId}/contract');
+        for (final c in ((body?['contracts'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+          if (c['status'] == 'ACTIVE') contractEnd = c['endDate'] as String?;
+        }
+      } on Exception {
+        contractEnd = null;
+      }
       if (!mounted) return;
       setState(() {
         _requests = rows;
+        _contractEnd = contractEnd;
         _loadError = null;
       });
     } on Exception catch (e) {
@@ -102,6 +113,14 @@ class _EndingRequestScreenState extends State<EndingRequestScreen> {
     return null;
   }
 
+  // Hết hạn khi ngày không sớm hơn ngày hết hạn hợp đồng; backend xét lại khi lưu
+  String? get _endCase {
+    final date = _parsedDate();
+    if (date == null) return null;
+    final end = _contractEnd == null ? null : DateTime.tryParse(_contractEnd!);
+    return end != null && !date.isBefore(end) ? 'CONTRACT_EXPIRED' : 'CONTRACT_TERMINATION';
+  }
+
   Future<void> _pickDate() async {
     final current = _parsedDate();
     final picked = await showDatePicker(
@@ -131,24 +150,24 @@ class _EndingRequestScreenState extends State<EndingRequestScreen> {
 
   Future<void> _send() async {
     setState(() => _submitted = true);
-    if (_case == null || _dateError != null || _reason.text.trim().isEmpty) return;
+    final endCase = _endCase;
+    if (endCase == null || _dateError != null || _reason.text.trim().isEmpty) return;
     final date = _parsedDate()!;
     final confirmed = await _confirm(
       'Gửi yêu cầu kết thúc lưu trú?',
-      '${_cases[_case]}, ngày ${_display(date)}. Hành chính của viện sẽ liên hệ để làm thủ tục.',
+      '${_cases[endCase]}, ngày ${_display(date)}. Hành chính của viện sẽ liên hệ để làm thủ tục.',
       'Xác nhận gửi',
     );
     if (!confirmed || !mounted) return;
     await _command(() async {
       await widget.api.post(
         _path,
-        {'endCase': _case, 'expectedEndDate': _iso(date), 'reason': _reason.text.trim()},
+        {'endCase': endCase, 'expectedEndDate': _iso(date), 'reason': _reason.text.trim()},
         headers: {'Idempotency-Key': _key},
       );
       // Lần gửi sau (sau khi hủy hoặc bị từ chối) là yêu cầu mới
       _key = _uuid();
       _submitted = false;
-      _case = null;
       _date.clear();
       _reason.clear();
     });
@@ -226,15 +245,9 @@ class _EndingRequestScreenState extends State<EndingRequestScreen> {
     const SizedBox(height: 4),
     Text('Hành chính của viện nhận yêu cầu, lập hồ sơ và liên hệ gia đình để làm thủ tục.', style: text.bodySmall),
     const SizedBox(height: 16),
-    DropdownButtonFormField<String>(
-      key: ValueKey(_case),
-      initialValue: _case,
-      decoration: InputDecoration(
-        labelText: 'Trường hợp kết thúc',
-        errorText: _submitted && _case == null ? 'Chọn trường hợp' : null,
-      ),
-      items: [for (final e in _cases.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
-      onChanged: (v) => setState(() => _case = v),
+    Text(
+      _contractEnd == null ? 'Hợp đồng không có ngày hết hạn.' : 'Hợp đồng hết hạn ngày ${formatDate(_contractEnd!)}.',
+      style: text.bodyMedium,
     ),
     const SizedBox(height: 12),
     TextField(
@@ -251,6 +264,14 @@ class _EndingRequestScreenState extends State<EndingRequestScreen> {
       ),
       onChanged: (_) => setState(() {}),
     ),
+    // Luôn giữ chỗ dòng chú thích để các ô nhập không dịch chỗ khi đang gõ
+    const SizedBox(height: 4),
+    Text(switch (_endCase) {
+      'CONTRACT_EXPIRED' => 'Kết thúc khi hết hạn hợp đồng: tháng cuối tính theo số ngày ở.',
+      'CONTRACT_TERMINATION' =>
+        'Chấm dứt trước hạn hợp đồng: nội trú dài hạn trả đủ tháng cuối; viện trao đổi phí chấm dứt sớm nếu hợp đồng có.',
+      _ => '',
+    }, style: text.bodySmall),
     const SizedBox(height: 12),
     TextField(
       controller: _reason,
