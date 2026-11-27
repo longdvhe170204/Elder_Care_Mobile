@@ -6,9 +6,12 @@ import '../../common/widgets/page_body.dart';
 
 /// FR-037/038: A nối màn vào cổng; mọi dữ liệu và quyền do backend cung cấp.
 class FamilyCostsScreen extends StatefulWidget {
-  const FamilyCostsScreen({super.key, required this.api, required this.residentId});
+  const FamilyCostsScreen({super.key, required this.api, required this.residentId, this.initialRange});
   final ApiClient api;
   final int residentId;
+
+  /// Khoảng ngày chọn sẵn (test); người dùng đổi hoặc bỏ trên màn.
+  final DateTimeRange? initialRange;
   @override
   State<FamilyCostsScreen> createState() => _FamilyCostsScreenState();
 }
@@ -16,7 +19,7 @@ class FamilyCostsScreen extends StatefulWidget {
 class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
   List<Map<String, dynamic>>? _statements;
   Map<String, dynamic>? _summary;
-  DateTimeRange? _range;
+  late DateTimeRange? _range = widget.initialRange;
   String? _error;
   bool _denied = false;
   bool _busy = false;
@@ -106,6 +109,32 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
     }
   }
 
+  // Khoảng ngày lọc cả khoản đã chốt theo ngày phát sinh (góp ý demo BF-10, 2026-11-27)
+  List<Map<String, dynamic>> _itemsInRange(Map<String, dynamic> statement) {
+    final items = (statement['items'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final range = _range;
+    if (range == null) return items;
+    final from = _iso(range.start);
+    final to = _iso(range.end);
+    return items.where((i) {
+      final date = i['incurredOn'] as String;
+      return date.compareTo(from) >= 0 && date.compareTo(to) <= 0;
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> get _visibleStatements => [
+    for (final row in _statements ?? <Map<String, dynamic>>[])
+      if (_range == null || _itemsInRange(row).isNotEmpty) row,
+  ];
+
+  String _title(Map<String, dynamic> row) {
+    final period = row['period'] as String;
+    final label = 'Kỳ ${period.substring(5)}/${period.substring(0, 4)}';
+    if (_range == null) return '$label · ${_money(row['total'])}';
+    final sum = _itemsInRange(row).fold<num>(0, (total, i) => total + (i['amount'] as num? ?? 0));
+    return '$label · trong khoảng ${_money(sum)}';
+  }
+
   static const _types = {
     'RESIDENCY_FEE': 'Phí lưu trú',
     'DAY_CARE_SESSION_FEE': 'Phí buổi bán trú',
@@ -125,6 +154,7 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
     final grouped = digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
     return '${value < 0 ? '-' : ''}$grouped đ';
   }
+
   List<Widget> _totals(Object? raw) => (raw as List<dynamic>? ?? []).map((value) {
     final row = value as Map<String, dynamic>;
     return ListTile(title: Text(_types[row['type']] ?? 'Chi phí'), trailing: Text(_money(row['total'])));
@@ -143,7 +173,7 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
                   TextButton(onPressed: _load, child: const Text('Tải lại')),
                 ],
                 Text('Tạm tính, chưa chốt', style: Theme.of(context).textTheme.titleMedium),
-                const Text('Để trống khoảng ngày để xem từ đầu tháng tới hôm nay.'),
+                const Text('Khoảng ngày lọc cả tạm tính và bảng đã chốt. Để trống thì xem tạm tính từ đầu tháng.'),
                 TextButton(
                   onPressed: _busy ? null : _chooseRange,
                   child: Text(
@@ -159,13 +189,26 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
                 ],
                 const Divider(),
                 Text('Bảng đã chốt', style: Theme.of(context).textTheme.titleMedium),
+                if (_range != null) ...[
+                  Text(
+                    'Đang xem các khoản phát sinh từ ${formatDate(_iso(_range!.start))} đến '
+                    '${formatDate(_iso(_range!.end))}.',
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _range = null;
+                      _summary = null;
+                    }),
+                    child: const Text('Bỏ chọn khoảng ngày'),
+                  ),
+                  if (_statements?.isNotEmpty == true && _visibleStatements.isEmpty)
+                    const Text('Không có khoản đã chốt trong khoảng ngày này.'),
+                ],
                 if (_statements == null && _error == null) const Center(child: CircularProgressIndicator()),
                 if (_statements?.isEmpty == true) const Text('Chưa có bảng chi phí đã chốt.'),
-                for (final row in _statements ?? <Map<String, dynamic>>[])
+                for (final row in _visibleStatements)
                   ExpansionTile(
-                    title: Text(
-                      'Kỳ ${(row['period'] as String).substring(5)}/${(row['period'] as String).substring(0, 4)} · ${_money(row['total'])}',
-                    ),
+                    title: Text(_title(row)),
                     subtitle: Text(
                       row['statementType'] == 'SUPPLEMENTARY'
                           ? 'Bổ sung'
@@ -175,14 +218,14 @@ class _FamilyCostsScreenState extends State<FamilyCostsScreen> {
                     ),
                     children: [
                       // 017 US4: bảng chốt được trừ vào số dư; người thân xem còn nợ, cách nộp tiền ở mục Số dư
-                      if (row['finalPeriod'] == true)
+                      if (_range == null && row['finalPeriod'] == true)
                         const ListTile(
                           title: Text(
                             'Tổng bảng kỳ cuối đã được trừ vào số dư. Xem số dư, còn nợ và cách nộp tiền ở mục Số dư.',
                           ),
                         ),
-                      ..._totals(row['totalsByType']),
-                      for (final raw in row['items'] as List<dynamic>? ?? []) _item(raw as Map<String, dynamic>),
+                      if (_range == null) ..._totals(row['totalsByType']),
+                      for (final item in _itemsInRange(row)) _item(item),
                     ],
                   ),
               ],

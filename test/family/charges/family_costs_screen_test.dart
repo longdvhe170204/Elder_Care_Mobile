@@ -85,4 +85,54 @@ void main() {
     expect(find.text('Bạn không có quyền xem chi phí của người cao tuổi này.'), findsOneWidget);
     expect(find.text('Xem tạm tính'), findsNothing);
   });
+
+  // Góp ý demo BF-10 (B16, chọn A): khoảng ngày lọc cả khoản trong bảng đã chốt theo ngày phát sinh
+  testWidgets('B16_khoang_ngay_loc_ca_bang_da_chot', (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    Map<String, Object> item(String description, String date, int amount) => {
+      'description': description,
+      'incurredOn': date,
+      'quantity': 1,
+      'unit': 'lần',
+      'unitPrice': amount,
+      'amount': amount,
+    };
+    final api = ApiClient(
+      baseUrl: 'http://localhost',
+      httpClient: MockClient((request) async {
+        final Object body = [
+          {
+            'id': 2,
+            'period': '2026-11',
+            'total': 300000,
+            'items': [item('Khám ngoài', '2026-11-05', 100000), item('Phục hồi', '2026-11-24', 200000)],
+            'totalsByType': <Object>[],
+          },
+        ];
+        return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json; charset=utf-8'});
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FamilyCostsScreen(
+          api: api,
+          residentId: 7,
+          initialRange: DateTimeRange(start: DateTime(2026, 11, 20), end: DateTime(2026, 11, 25)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Đang xem các khoản phát sinh từ 20/11/2026 đến 25/11/2026.'), findsOneWidget);
+    await tester.tap(find.text('Kỳ 11/2026 · trong khoảng 200.000 đ'));
+    await tester.pumpAndSettle();
+    expect(find.text('Phục hồi'), findsOneWidget);
+    expect(find.text('Khám ngoài'), findsNothing);
+
+    await tester.tap(find.text('Bỏ chọn khoảng ngày'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kỳ 11/2026 · 300.000 đ'), findsOneWidget);
+  });
 }

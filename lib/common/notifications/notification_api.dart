@@ -56,9 +56,6 @@ class NotificationApi {
   /// Mở thông báo: backend ghi thời điểm xem lần đầu và trả nội dung theo quyền hiện hành (FR-034).
   Future<Map<String, dynamic>> open(int id) async => (await _api.get('/me/notifications/$id'))!;
 
-  Future<void> hide(int id, String key) =>
-      _api.post('/me/notifications/$id/hide', const {}, headers: {'Idempotency-Key': key});
-
   Future<void> acknowledge(int id, String key) =>
       _api.post('/notifications/$id/acknowledge', const {}, headers: {'Idempotency-Key': key});
 

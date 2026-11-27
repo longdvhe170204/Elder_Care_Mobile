@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/common/api/api_client.dart';
@@ -11,7 +9,7 @@ import '../../support/fake_backend.dart';
 import '../../support/fake_push.dart';
 
 // 009 T031 (US4; FR-033, FR-034, FR-036, FR-026): hộp thông báo người thân trên app: Khẩn cấp chưa xác nhận lên đầu có nút
-// xác nhận, lọc mức và chưa xem, mở thông báo theo quyền hiện hành, ẩn thông báo đã xem. Nhận đẩy chờ cấu hình Firebase.
+// xác nhận, lọc mức và chưa xem, mở thông báo theo quyền hiện hành. Nhận đẩy chờ cấu hình Firebase.
 
 Map<String, dynamic> notification({
   int id = 1,
@@ -191,20 +189,14 @@ void main() {
     expect(find.text('Bạn không còn quyền xem phần này.'), findsOneWidget);
   });
 
-  testWidgets('FR_036_hide_removesRow', (tester) async {
+  // Góp ý demo BF-10 (2026-11-27): bỏ ẩn thông báo, chỉ còn Chưa xem → Đã xem
+  testWidgets('thongBaoDaXem_khongCoNutAn', (tester) async {
     backend.on('GET', '/me/notifications/1', 200, notification(viewedAt: '2026-10-27T03:00:00Z'));
-    backend.on('POST', '/me/notifications/1/hide', 200);
     await pumpScreen(tester, backend.client());
     await tester.tap(find.text('Bảng chi phí tháng 10 đã chốt'));
     await tester.pumpAndSettle();
 
-    backend.on('GET', '/me/notifications', 200, page([]));
-    await tapButton(tester, 'Ẩn khỏi danh sách');
-
-    final call = backend.calls('POST', '/me/notifications/1/hide').single;
-    expect(call.headers['Idempotency-Key'], isNotEmpty);
-    expect(jsonDecode(call.body), isA<Map<String, dynamic>>());
-    expect(find.text('Bảng chi phí tháng 10 đã chốt'), findsNothing);
+    expect(find.text('Ẩn khỏi danh sách'), findsNothing);
   });
 
   testWidgets('T031_tappedPush_opensThatNotification', (tester) async {

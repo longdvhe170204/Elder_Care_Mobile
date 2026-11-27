@@ -163,15 +163,12 @@ class _NotificationInboxState extends State<NotificationInbox> {
   Future<void> _open(Map<String, dynamic> notification) => _openById(notification['id'] as int);
 
   Future<void> _openById(int id) async {
-    final hidden = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => NotificationScreen(notifications: _notifications, id: id, sourceAction: widget.sourceAction),
       ),
     );
     if (!mounted) return;
-    if (hidden ?? false) {
-      setState(() => _items = _items?.where((n) => n['id'] != id).toList());
-    }
     await _load();
   }
 
