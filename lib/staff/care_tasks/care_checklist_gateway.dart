@@ -5,6 +5,9 @@ abstract interface class CareChecklistGateway {
   Future<void> notPerform(int taskId, int reasonTypeId, String? note, String key);
   Future<void> claim(int taskId, String key);
   Future<void> record(int taskId, Map<String, dynamic> body, String key);
+
+  /// Q-446: ghi nhận lại kết quả đã ghi trong ca bằng bản đính chính có lý do; bản gốc giữ nguyên.
+  Future<void> reRecord(int taskId, Map<String, dynamic> content, String reason, String key);
 }
 
 /// Chỉ operation trả object/không body; không tự viết transport hoặc bỏ qua client common.
@@ -36,5 +39,14 @@ class ApiCareChecklistGateway implements CareChecklistGateway {
   @override
   Future<void> record(int taskId, Map<String, dynamic> body, String key) async {
     await api.post('/care-tasks/$taskId/record', body, headers: {'Idempotency-Key': key});
+  }
+
+  @override
+  Future<void> reRecord(int taskId, Map<String, dynamic> content, String reason, String key) async {
+    await api.post('/care-results/$taskId/correct', {
+      'type': 'AMEND_CONTENT',
+      'correctedContent': content,
+      'reason': reason,
+    }, headers: {'Idempotency-Key': key});
   }
 }

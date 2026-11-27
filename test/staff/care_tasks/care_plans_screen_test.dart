@@ -68,7 +68,9 @@ void main() {
     await show(tester, backend);
     await tester.tap(find.text('Người kiểm thử'));
     await tester.pumpAndSettle();
-    expect(find.text('Kế hoạch lần 2, hiệu lực từ 08/11/2026'), findsOneWidget);
+    // Q-447: không hiện số phiên bản
+    expect(find.text('Hiệu lực từ 08/11/2026'), findsOneWidget);
+    expect(find.textContaining('Kế hoạch lần'), findsNothing);
     expect(find.text('Mời uống nước, ghi số ml'), findsOneWidget);
     expect(find.text('2 lần mỗi ngày: 09:00, 15:00 · Nhân viên chăm sóc'), findsOneWidget);
     expect(find.text('Mục tiêu nước 1200 ml/ngày'), findsOneWidget);

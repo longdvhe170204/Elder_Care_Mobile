@@ -19,7 +19,7 @@ const _types = {
   'DEPOSIT_REFUND': 'Hoàn cọc',
 };
 
-// Q-451: khoản nộp, khoản hoàn (cổng chỉ trả giao dịch Đã xác nhận) có biên nhận
+// Q-460: khoản nộp, khoản hoàn (cổng chỉ trả giao dịch Đã xác nhận) có biên nhận
 const _paymentTypes = {'CASH_PAYMENT', 'BANK_TRANSFER_PAYMENT', 'DEPOSIT_RECEIPT'};
 const _refundTypes = {'REFUND', 'DEPOSIT_REFUND'};
 
@@ -88,7 +88,7 @@ class _FamilyBalanceScreenState extends State<FamilyBalanceScreen> {
     }
   }
 
-  // Q-451: biên nhận nộp tiền, số theo mã giao dịch
+  // Q-460: biên nhận nộp tiền, số theo mã giao dịch
   Future<void> _receipt(Map<String, dynamic> t) async {
     final id = t['id'] as int;
     final prefix = (t['amount'] as num) > 0 ? 'BN' : 'HT';

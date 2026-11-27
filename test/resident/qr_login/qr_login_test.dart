@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:mobile/app.dart';
+import 'package:mobile/common/auth/login_screen.dart';
 import 'package:mobile/common/auth/secure_store.dart';
 import 'package:mobile/common/auth/session_controller.dart';
 import 'package:mobile/resident/sos/sos_button.dart';
@@ -20,13 +22,21 @@ Future<SessionController> pumpApp(
   FakeBackend backend,
   MemoryStore store, {
   FakeBiometric? biometric,
+  bool openQr = true,
 }) async {
   final s = session(backend, store, biometric ?? FakeBiometric(available: false));
   await s.start();
   await tester.pumpWidget(ElderCareApp(session: s, queue: memoryQueue(s), scannerBuilder: fakeScanner));
   await tester.pumpAndSettle();
-  await openResidentLogin(tester);
+  if (openQr) await openResidentLogin(tester);
   return s;
+}
+
+Future<void> enterResidentCredentials(WidgetTester tester, String password) async {
+  await tester.enterText(find.byKey(LoginScreen.usernameKey), 'nct-41');
+  await tester.enterText(find.byKey(LoginScreen.passwordKey), password);
+  await tester.tap(find.widgetWithText(FilledButton, 'Đăng nhập'));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -37,6 +47,25 @@ void main() {
     backend = FakeBackend();
     store = MemoryStore();
     store.values[sosIntroSeenKey] = 'seen';
+  });
+
+  testWidgets('quetMa_tuManChung_quayLaiManDangNhapChung', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(375, 812);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await pumpApp(tester, backend, store);
+
+    expect(find.text('Dùng mật khẩu'), findsNothing);
+    await tester.tap(find.text('Quay lại đăng nhập'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
+    expect(find.text('Đăng nhập bằng mật khẩu'), findsNothing);
+
+    await openResidentLogin(tester);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
   });
 
   testWidgets('FR_069_quetMa_guiMaVaMaThietBi_luuToken_vaoHomNay', (tester) async {
@@ -70,23 +99,43 @@ void main() {
     expect(store.values[SessionController.tokenKey], isNull);
   });
 
-  testWidgets('FR_069_dungMatKhau_kenhAppNguoiCaoTuoi', (tester) async {
-    backend.on('POST', '/auth/login', 200, loginResponse());
-    await pumpApp(tester, backend, store);
-
-    await tester.tap(find.text('Dùng mật khẩu'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), 'nct-41');
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), 'Mat-khau-1');
-    await tester.tap(find.text('Đăng nhập'));
-    await tester.pumpAndSettle();
-
-    expect(jsonDecode(backend.calls('POST', '/auth/login').single.body), {
-      'username': 'nct-41',
-      'password': 'Mat-khau-1',
-      'channel': 'RESIDENT_APP',
+  testWidgets('FR_069_matKhauTuManChung_ganThietBi', (tester) async {
+    backend.onResponse('POST', '/auth/login', (request) {
+      final mobile = (jsonDecode(request.body) as Map)['channel'] == 'MOBILE_APP';
+      return http.Response.bytes(
+        utf8.encode(
+          jsonEncode(
+            mobile ? {'errorCode': 'INVALID_VALUE', 'detail': 'Người cao tuổi đăng nhập bằng mã QR'} : loginResponse(),
+          ),
+        ),
+        mobile ? 422 : 200,
+      );
     });
+    await pumpApp(tester, backend, store, openQr: false);
+
+    await enterResidentCredentials(tester, 'Mat-khau-1');
+
+    final calls = backend.calls('POST', '/auth/login');
+    expect(calls.map((call) => jsonDecode(call.body)), [
+      {'username': 'nct-41', 'password': 'Mat-khau-1', 'channel': 'MOBILE_APP'},
+      {'username': 'nct-41', 'password': 'Mat-khau-1', 'channel': 'RESIDENT_APP'},
+    ]);
+    expect(calls.first.headers['X-Device-Id'], calls.last.headers['X-Device-Id']);
+    expect(store.values[SessionController.deviceTokenKey], 'device-token-1');
     expect(find.textContaining('Hôm nay'), findsOneWidget);
+  });
+
+  testWidgets('FR_014_saiMatKhau_chiGuiMotLan', (tester) async {
+    backend.on('POST', '/auth/login', 401, {
+      'errorCode': 'LOGIN_FAILED',
+      'detail': 'Tên đăng nhập hoặc mật khẩu không đúng',
+    });
+    await pumpApp(tester, backend, store, openQr: false);
+
+    await enterResidentCredentials(tester, 'sai');
+
+    expect(backend.calls('POST', '/auth/login'), hasLength(1));
+    expect(find.text('Tên đăng nhập hoặc mật khẩu không đúng'), findsOneWidget);
   });
 
   // FR-006 (sửa 2026-11-02): quét mã không buộc đổi mật khẩu (backend không trả cờ, test FR_069 trên); chỉ mật khẩu do
@@ -94,14 +143,11 @@ void main() {
   testWidgets('FR_051a_matKhauCapLai_buocDoiMatKhau_doiXong_dangNhapLai', (tester) async {
     backend.on('POST', '/auth/login', 200, loginResponse(mustChangePassword: true));
     backend.on('POST', '/auth/change-password', 204);
-    await pumpApp(tester, backend, store);
+    store.values[SessionController.deviceTokenKey] = 'device-token-1';
+    await pumpApp(tester, backend, store, openQr: false);
 
-    await tester.tap(find.text('Dùng mật khẩu'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Tên đăng nhập'), 'nct-41');
-    await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu'), 'Tam-123456');
-    await tester.tap(find.text('Đăng nhập'));
-    await tester.pumpAndSettle();
+    await enterResidentCredentials(tester, 'Tam-123456');
+    expect((jsonDecode(backend.calls('POST', '/auth/login').single.body) as Map)['channel'], 'RESIDENT_APP');
     expect(find.text('Đặt mật khẩu mới'), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Mật khẩu nhân viên đưa'), 'Tam-123456');
@@ -114,6 +160,7 @@ void main() {
       'newPassword': 'Moi-12345678',
     });
     expect(find.text('Đã đổi mật khẩu. Quét mã mới hoặc dùng mật khẩu mới để vào.'), findsOneWidget);
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
   });
 
   testWidgets('FR_013a_moLaiApp_phienCon_vaoThangHomNay', (tester) async {
@@ -146,23 +193,24 @@ void main() {
     expect(find.text('Máy chưa kết nối mạng.'), findsOneWidget);
   });
 
-  testWidgets('phienBiKetThuc_401_veManQuet', (tester) async {
+  testWidgets('phienBiKetThuc_401_veManDangNhapChung', (tester) async {
     store.values[SessionController.tokenKey] = 'session-old';
     backend.on('GET', '/me', 401, {'status': 401});
-    await pumpApp(tester, backend, store);
+    await pumpApp(tester, backend, store, openQr: false);
 
-    expect(find.text('Đặt mã QR nhân viên đưa vào trong khung.'), findsOneWidget);
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
     expect(store.values[SessionController.tokenKey], isNull);
   });
 
-  testWidgets('FR_085_mayDaGan_chuaCoPhien_manQuetCoNutSos', (tester) async {
+  testWidgets('FR_085_mayDaGan_coNutSosTrenManChungVaManQuet', (tester) async {
     store.values[SessionController.deviceTokenKey] = 'device-token-1';
-    final s = session(backend, store, FakeBiometric(available: false));
-    await s.start();
-    await tester.pumpWidget(ElderCareApp(session: s, queue: memoryQueue(s), scannerBuilder: fakeScanner));
-    await tester.pumpAndSettle();
+    await pumpApp(tester, backend, store, openQr: false);
+    expect(find.byKey(LoginScreen.usernameKey), findsOneWidget);
+    expect(find.byType(SosButton), findsOneWidget);
 
+    await openResidentLogin(tester);
     expect(find.text('Đặt mã QR nhân viên đưa vào trong khung.'), findsOneWidget);
+    expect(find.text('Quay lại đăng nhập'), findsOneWidget);
     expect(find.byType(SosButton), findsOneWidget);
   });
 

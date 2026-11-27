@@ -204,7 +204,7 @@ void main() {
     expect(find.text('Lưu kết quả'), findsOneWidget);
   });
 
-  testWidgets('chiTietCongViec_moKeHoachVaBaoSuCo', (tester) async {
+  testWidgets('chiTietCongViec_moBaoSuCo_khongConXemKeHoach', (tester) async {
     final backend = FakeBackend()
       ..on('GET', '/me/permissions', 200, [
         {'function': 'TASK_CHECKLIST', 'operation': 'VIEW'},
@@ -226,11 +226,7 @@ void main() {
     expect(find.text('Ca đêm'), findsOneWidget);
     await tester.tap(find.text('Hỗ trợ uống nước'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Xem kế hoạch chăm sóc'));
-    await tester.pumpAndSettle();
-    expect(find.text('Kế hoạch chăm sóc'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    expect(find.text('Xem kế hoạch chăm sóc'), findsNothing);
     await tester.tap(find.text('Báo sự cố'));
     await tester.pumpAndSettle();
     // Màn Báo sự cố 4 bước (BF-06): mở từ công việc thì cụ đã chọn sẵn, vào thẳng bước chọn loại

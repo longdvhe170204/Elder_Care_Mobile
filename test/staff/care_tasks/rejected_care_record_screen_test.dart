@@ -105,6 +105,6 @@ void main() {
 
     expect(find.text('Ghi nhận phát sinh'), findsOneWidget);
     expect(find.text('Người kiểm thử'), findsOneWidget);
-    expect(find.widgetWithText(TextField, 'Lượng nước (ml)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('careResult.numeric')), findsOneWidget);
   });
 }

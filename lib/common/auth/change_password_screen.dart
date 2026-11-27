@@ -2,16 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/problem_message.dart';
+import '../widgets/header_app_bar.dart';
 import '../widgets/page_body.dart';
 import 'session_controller.dart';
 
-/// Đổi mật khẩu bắt buộc lần đầu (002 FR-006) cho cả ba loại tài khoản; [message] đổi lỗi thành câu báo theo phần app
+/// Đổi mật khẩu trong ứng dụng hoặc bắt buộc lần đầu (002 FR-006). [message] đổi lỗi thành câu báo theo phần app
 /// (người cao tuổi dùng câu ngắn của DESIGN.md 15.6).
 class ChangePasswordScreen extends StatefulWidget {
-  const ChangePasswordScreen({super.key, required this.session, this.message = backendMessage});
+  const ChangePasswordScreen({
+    super.key,
+    required this.session,
+    this.message = backendMessage,
+    this.requiredAtLogin = true,
+  });
 
   final SessionController session;
   final String Function(Object error) message;
+  final bool requiredAtLogin;
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -32,6 +39,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 
   Future<void> _save() async {
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -39,6 +47,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     });
     try {
       await widget.session.changePassword(_current.text, _next.text);
+      if (mounted && !widget.requiredAtLogin) Navigator.of(context).pop(true);
     } on ApiProblem catch (p) {
       // 422 báo tại ô (DESIGN.md 15.3)
       if (mounted) {
@@ -55,6 +64,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     return Scaffold(
+      appBar: widget.requiredAtLogin ? null : headerAppBar(context, title: 'Đổi mật khẩu'),
       body: PageBody(
         child: Card(
           child: Padding(
@@ -63,7 +73,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               children: [
                 Text('Đặt mật khẩu mới', style: text.headlineMedium),
                 const SizedBox(height: 8),
-                Text('Lần đầu vào ứng dụng cần đặt mật khẩu của riêng mình.', style: text.bodyLarge),
+                if (widget.requiredAtLogin)
+                  Text('Lần đầu vào ứng dụng cần đặt mật khẩu của riêng mình.', style: text.bodyLarge),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: text.bodyLarge?.copyWith(color: Theme.of(context).colorScheme.error)),
@@ -75,7 +86,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     children: [
                       TextField(
                         controller: _current,
-                        decoration: const InputDecoration(labelText: 'Mật khẩu nhân viên đưa'),
+                        decoration: InputDecoration(
+                          labelText: widget.requiredAtLogin ? 'Mật khẩu nhân viên đưa' : 'Mật khẩu hiện tại',
+                        ),
                         obscureText: true,
                         autofillHints: const [AutofillHints.password],
                       ),

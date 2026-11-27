@@ -65,7 +65,7 @@ void main() {
     final b = backend();
     await pump(tester, b);
     b.on('GET', '/shifts/12/handovers', 503, {'detail': 'Chưa đọc được bàn giao'});
-    await tester.tap(find.text('Tải lại'));
+    await tester.fling(find.byType(ListView), const Offset(0, 400), 1000);
     await tester.pumpAndSettle();
     expect(find.text('Nội dung bàn giao kiểm thử'), findsNothing);
     expect(find.text('Việc cần theo dõi kiểm thử'), findsNothing);
@@ -76,7 +76,7 @@ void main() {
     final b = backend();
     await pump(tester, b);
     b.on('GET', '/me/permissions', 403, {'detail': 'Quyền xem đã thu hồi'});
-    await tester.tap(find.text('Tải lại'));
+    await tester.fling(find.byType(ListView), const Offset(0, 400), 1000);
     await tester.pumpAndSettle();
     expect(find.text('Nội dung bàn giao kiểm thử'), findsNothing);
     expect(find.text('Quyền xem đã thu hồi'), findsOneWidget);
@@ -104,8 +104,7 @@ void main() {
   testWidgets('FR_042_xác nhận cần thao tác xác nhận và đọc lại trạng thái máy chủ', (tester) async {
     final b = backend(commands: ['confirm'])..on('POST', '/handovers/21/confirm', 200, {});
     await pump(tester, b);
-    await tester.scrollUntilVisible(find.text('Xác nhận bàn giao'), 150);
-    await tester.tap(find.text('Xác nhận bàn giao'));
+    await tester.tap(find.text('Nhận bàn giao'));
     await tester.pumpAndSettle();
     expect(b.calls('POST', '/handovers/21/confirm'), isEmpty);
     b.on('GET', '/shifts/12/handovers', 200, {...handover(), 'status': 'CONFIRMED'});
@@ -114,27 +113,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(b.calls('POST', '/handovers/21/confirm'), hasLength(1));
     expect(find.text('Đã xác nhận'), findsOneWidget);
-    expect(find.text('Xác nhận bàn giao'), findsNothing);
+    expect(find.text('Nhận bàn giao'), findsNothing);
   });
 
   testWidgets('FR_041_hoàn tất bị chặn giữ nội dung và lý do backend', (tester) async {
     final draft = {
       ...handover(commands: ['complete']),
       'status': 'DRAFT',
+      'items': [
+        {'id': 30, 'group': 'TASK', 'description': 'Việc cần theo dõi kiểm thử', 'note': 'Lý do kiểm thử'},
+      ],
     };
     final b = backend()
       ..on('GET', '/shifts/12/handovers', 200, draft)
       ..on('GET', '/handovers/21', 200, draft, {'etag': '"5"'})
       ..on('POST', '/handovers/21/complete', 409, {'detail': 'Cần ghi chú mục nghiêm trọng'});
     await pump(tester, b);
-    await tester.scrollUntilVisible(find.text('Hoàn tất bàn giao'), 150);
-    await tester.tap(find.text('Hoàn tất bàn giao'));
+    await tester.tap(find.text('Xác nhận bàn giao'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Tiếp tục'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Cần ghi chú mục nghiêm trọng'), -150);
     expect(find.text('Cần ghi chú mục nghiêm trọng'), findsOneWidget);
-    expect(find.text('Bản nháp'), findsOneWidget);
+    expect(find.text('Chờ bàn giao'), findsOneWidget);
     expect(b.calls('POST', '/handovers/21/complete'), hasLength(1));
   });
 
@@ -220,7 +220,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(DropdownMenuItem<int>).last);
     await tester.pumpAndSettle();
-    expect(find.text('Xác nhận bàn giao'), findsOneWidget);
+    expect(find.text('Nhận bàn giao'), findsOneWidget);
     expect(store.values.keys, contains('handover.7.12'));
 
     b.down = true;
@@ -228,7 +228,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Nội dung bàn giao kiểm thử'), findsOneWidget);
     expect(find.textContaining('Bản lưu trên máy lúc'), findsOneWidget);
-    expect(find.text('Xác nhận bàn giao'), findsNothing);
+    expect(find.text('Nhận bàn giao'), findsNothing);
   });
 
   testWidgets('FR_060_bản lưu quá hạn bị xóa, mất mạng không hiện nội dung', (tester) async {
@@ -273,5 +273,102 @@ void main() {
       'residentId': 5,
       'description': 'Cảnh báo sốt',
     });
+  });
+
+  // Figma 117:1311: việc chưa đóng của ca chưa có lý do thì chặn "Xác nhận bàn giao", bổ sung lý do tạo mục TASK có ghi
+  // chú, gửi xong hiện "Đã gửi bàn giao".
+  testWidgets('BR_M09_06_thieuLyDo_chanGui_boSungLyDo_roiGuiBanGiao', (tester) async {
+    final draft = {
+      ...handover(commands: ['addItem', 'updateItem', 'assess', 'complete']),
+      'status': 'DRAFT',
+      'generalAssessment': 'Ghi chú cho ca sau kiểm thử',
+      'items': <Object>[],
+    };
+    final b = backend()
+      ..on('GET', '/shifts/12/handovers', 200, draft)
+      ..on('GET', '/handovers/21', 200, draft, {'etag': '"5"'})
+      ..on('GET', '/handovers/21/source-records', 200, [
+        {
+          'group': 'TASK',
+          'sourceType': 'M04.TASK',
+          'sourceId': '77',
+          'residentId': 5,
+          'description': 'Hỗ trợ đi lại',
+          'currentStatus': 'OVERDUE',
+          'hasItem': false,
+        },
+      ])
+      ..on('GET', '/care-tasks/77', 200, {
+        'id': 77,
+        'taskType': 'Hỗ trợ đi lại',
+        'status': 'OVERDUE',
+        'residentCard': {'fullName': 'Nguyễn Văn A', 'roomBed': 'Phòng 203 / Giường 1'},
+      })
+      ..on('POST', '/handovers/21/items', 201);
+    await pump(tester, b);
+    expect(find.text('Nguyễn Văn A · Phòng 203 / Giường 1'), findsOneWidget);
+    expect(find.text('Quá hạn'), findsOneWidget);
+    expect(find.text('Còn 1 việc thiếu lý do'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Xác nhận bàn giao')).onPressed, isNull);
+
+    await tester.tap(find.text('Bổ sung lý do'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cần nhập lý do để lưu.'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Lưu lý do')).onPressed, isNull);
+    await tester.enterText(find.byKey(const ValueKey('handover.reason')), 'Bác đang nghỉ');
+    await tester.enterText(find.byKey(const ValueKey('handover.next')), 'Hỏi lại khi bác thức dậy');
+    await tester.pumpAndSettle();
+    final withNote = {
+      ...draft,
+      'items': [
+        {
+          'id': 40,
+          'group': 'TASK',
+          'sourceType': 'M04.TASK',
+          'sourceId': '77',
+          'residentId': 5,
+          'description': 'Hỗ trợ đi lại',
+          'note': 'Bác đang nghỉ\nViệc ca sau cần làm: Hỏi lại khi bác thức dậy',
+        },
+      ],
+    };
+    b
+      ..on('GET', '/shifts/12/handovers', 200, withNote)
+      ..on('GET', '/handovers/21', 200, withNote, {'etag': '"6"'})
+      ..on('GET', '/handovers/21/source-records', 200, <Object>[]);
+    await tester.tap(find.text('Lưu lý do'));
+    await tester.pumpAndSettle();
+    final post = b.calls('POST', '/handovers/21/items').single;
+    expect(post.headers['If-Match'], '"5"');
+    expect(jsonDecode(post.body), {
+      'group': 'TASK',
+      'sourceType': 'M04.TASK',
+      'sourceId': '77',
+      'residentId': 5,
+      'description': 'Hỗ trợ đi lại',
+      'note': 'Bác đang nghỉ\nViệc ca sau cần làm: Hỏi lại khi bác thức dậy',
+    });
+    expect(find.text('Hỏi lại khi bác thức dậy'), findsOneWidget);
+    expect(find.text('1 việc sẽ được chuyển tiếp'), findsOneWidget);
+
+    final prepared = {...withNote, 'status': 'PREPARED', 'allowedCommands': <Object>[]};
+    b
+      ..on('POST', '/handovers/21/complete', 200, {})
+      ..on('GET', '/shifts/12/handovers', 200, prepared)
+      ..on('GET', '/handovers/21', 200, prepared, {'etag': '"7"'});
+    await tester.tap(find.text('Xác nhận bàn giao'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    expect(b.calls('POST', '/handovers/21/complete'), hasLength(1));
+    expect(b.calls('PUT', '/handovers/21/assessments'), isEmpty);
+    expect(find.text('Đã gửi bàn giao'), findsOneWidget);
+    expect(find.text('Về Ca của tôi'), findsOneWidget);
+  });
+
+  test('ghiChuMuc_tachLyDoVaViecCaSau', () {
+    expect(splitNote(joinNote('Lý do', 'Bước sau')), ('Lý do', 'Bước sau'));
+    expect(splitNote(joinNote('Lý do', '')), ('Lý do', ''));
+    expect(splitNote(null), ('', ''));
   });
 }

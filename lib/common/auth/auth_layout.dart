@@ -11,11 +11,12 @@ const appVersion = '1.0.0';
 /// 60 × 60 bo 16 màu xanh đêm có lá 28, cách 14 là chữ "Elder Care" 34/44 đậm; cách 34 là phần biểu mẫu; chân màn là
 /// phiên bản 13/20 chữ phụ.
 class AuthLayout extends StatelessWidget {
-  const AuthLayout({super.key, required this.children});
+  const AuthLayout({super.key, required this.children, this.bottomNavigationBar});
 
   static const logoKey = ValueKey('auth.logo');
 
   final List<Widget> children;
+  final Widget? bottomNavigationBar;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +25,7 @@ class AuthLayout extends StatelessWidget {
     final tones = theme.extension<Tones>()!;
     return Scaffold(
       backgroundColor: colors.surface,
+      bottomNavigationBar: bottomNavigationBar,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(

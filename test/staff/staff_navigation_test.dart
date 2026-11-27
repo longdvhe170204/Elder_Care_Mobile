@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/staff/staff_navigation.dart';
 
-// Bảng điều hướng nhân viên (spec 2026-11-20 điều hướng theo vai trò, mục 4, 5): vai trò chọn tab 2 và mục "Thêm",
-// quyền `/me/permissions` chỉ thu hẹp.
+// Trang chủ chọn lối vào chính và các mục nghiệp vụ theo vai trò và quyền.
 
 StaffNavigation _nav(Set<String> roles, [Set<String> grants = const {}, bool readinessDuty = false]) =>
     buildStaffNavigation(roles: roles, grants: grants, readinessDuty: readinessDuty);
@@ -12,7 +11,7 @@ void main() {
     final nav = _nav({'AC-04'}, {'MEDICATION_RECEIPT:CREATE'});
     expect(nav.primary, StaffPrimary.checklist);
     expect(nav.work, contains(StaffFeature.medicationIntake));
-    expect(nav.work, isNot(contains(StaffFeature.servingConfirmation)));
+    expect(nav.work, isNot(contains(StaffFeature.sharedMenu)));
   });
 
   test('dieuDuong_biThuHep_khongTiepNhanThuoc', () {
@@ -27,10 +26,9 @@ void main() {
     expect(nav.tools.toSet(), hasLength(nav.tools.length));
   });
 
-  test('bacSi_tab2NguoiCaoTuoi_anTraCuu', () {
+  test('bacSi_loiVaoChinhNguoiCaoTuoi', () {
     final nav = _nav({'AC-03'});
     expect(nav.primary, StaffPrimary.residents);
-    expect(nav.showLookupTab, isFalse);
   });
 
   test('bep_tab2PhieuBuaAn', () {
